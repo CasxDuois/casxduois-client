@@ -17,13 +17,13 @@ pub mod vertex;
 pub use frustum::{Frustum, Plane};
 pub use indirect::{DrawIndexedIndirectArgs, IndirectBatchManager};
 pub use mesher::{compute_ao, GreedyMesher, SectionMesh};
-pub use pipeline::RenderPipeline5Pass;
+pub use pipeline::{RenderPipeline5Pass, TerrainGpuPipeline};
 pub use vertex::PackedVertex;
 
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 
-/// Du lieu Uniform truyen vao Shader Camera
+/// Uniform data passed into the camera shader.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CameraUniform {

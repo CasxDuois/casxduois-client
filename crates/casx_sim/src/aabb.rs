@@ -81,10 +81,45 @@ impl PlayerSimulation {
         self.on_ground = false;
     }
 
-    /// Simulates 1 physics tick (50ms - 20 TPS)
-    pub fn tick(&mut self, world: &WorldStorage) {
+    /// Simulates 1 physics tick (50ms - 20 TPS) with movement inputs.
+    pub fn tick_with_input(
+        &mut self,
+        world: &WorldStorage,
+        forward_input: f32,
+        strafe_input: f32,
+        jump: bool,
+        sneak: bool,
+    ) {
+        if jump && self.on_ground {
+            self.velocity.y = 0.42;
+            self.on_ground = false;
+        }
+
         // Apply Vanilla gravity: v_y = (v_y - 0.08) * 0.98
         self.velocity.y = (self.velocity.y - 0.08) * 0.98;
+
+        let input_len_sq = forward_input * forward_input + strafe_input * strafe_input;
+        if input_len_sq > 1e-4 {
+            let inv_len = 1.0 / (input_len_sq as f64).sqrt();
+            let norm_forward = (forward_input as f64) * inv_len;
+            let norm_strafe = (strafe_input as f64) * inv_len;
+
+            let mut speed = if self.on_ground { 0.10 } else { 0.02 };
+            if sneak {
+                speed *= 0.3;
+            }
+
+            let rad = (self.yaw as f64).to_radians();
+            let sin_yaw = rad.sin();
+            let cos_yaw = rad.cos();
+
+            let move_x = (norm_strafe * cos_yaw - norm_forward * sin_yaw) * speed;
+            let move_z = (norm_forward * cos_yaw + norm_strafe * sin_yaw) * speed;
+
+            self.velocity.x += move_x;
+            self.velocity.z += move_z;
+        }
+
         // Horizontal drag: v_x, v_z * 0.91
         self.velocity.x *= 0.91;
         self.velocity.z *= 0.91;
@@ -99,6 +134,11 @@ impl PlayerSimulation {
         if self.on_ground {
             self.velocity.y = 0.0;
         }
+    }
+
+    /// Simulates 1 physics tick (50ms - 20 TPS) without external movement inputs.
+    pub fn tick(&mut self, world: &WorldStorage) {
+        self.tick_with_input(world, 0.0, 0.0, false, false);
     }
 }
 
@@ -136,5 +176,15 @@ mod tests {
         assert!(sim.on_ground);
         assert!((sim.pos.y - 65.0).abs() < 1e-4);
         assert_eq!(sim.velocity.y, 0.0);
+
+        // Test jump input
+        sim.tick_with_input(&world, 0.0, 0.0, true, false);
+        assert!(!sim.on_ground);
+        assert!(sim.pos.y > 65.0);
+
+        // Test forward input (yaw = 0 -> along +Z)
+        sim.yaw = 0.0;
+        sim.tick_with_input(&world, 1.0, 0.0, false, false);
+        assert!(sim.pos.z > 0.5);
     }
 }

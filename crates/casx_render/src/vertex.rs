@@ -72,6 +72,27 @@ impl PackedVertex {
         (self.data1 >> 16) & 0xFFFF
     }
 
+    /// Encodes chunk section offset (chunk_x: -8..=7, sec_y: 0..=15, chunk_z: -8..=7) into data1 reserved bits.
+    pub fn with_chunk_offset(mut self, chunk_x: i32, sec_y: i32, chunk_z: i32) -> Self {
+        let cx_enc = ((chunk_x + 8).clamp(0, 15) as u32) & 0x0F;
+        let cy_enc = (sec_y.clamp(0, 15) as u32) & 0x0F;
+        let cz_enc = ((chunk_z + 8).clamp(0, 15) as u32) & 0x0F;
+        self.data1 = (self.data1 & !0x0FFF) | (cx_enc << 8) | (cy_enc << 4) | cz_enc;
+        self
+    }
+
+    /// Unpacks chunk section offset (chunk_x, sec_y, chunk_z) from data1 reserved bits.
+    pub fn unpack_chunk_offset(&self) -> (i32, i32, i32) {
+        let cx_enc = (self.data1 >> 8) & 0x0F;
+        let cy_enc = (self.data1 >> 4) & 0x0F;
+        let cz_enc = self.data1 & 0x0F;
+        if cx_enc == 0 && cy_enc == 0 && cz_enc == 0 {
+            (0, 0, 0)
+        } else {
+            (cx_enc as i32 - 8, cy_enc as i32, cz_enc as i32 - 8)
+        }
+    }
+
     /// Vertex buffer layout descriptor for wgpu
     pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {

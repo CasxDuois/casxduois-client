@@ -568,9 +568,12 @@ impl GreedyMesher {
                             let tex_id =
                                 atlas.get_block_texture_id(block_id, meta, face_idx as u8) as u32;
                             let base_idx = vertices.len() as u32;
-                            let quad_verts = Self::generate_quad_vertices(
+                            let mut quad_verts = Self::generate_quad_vertices(
                                 face_idx, lx as u32, ly as u32, lz as u32, 1, 1, tex_id,
                             );
+                            for v in &mut quad_verts {
+                                *v = v.with_chunk_offset(chunk_x, sec_y as i32, chunk_z);
+                            }
 
                             vertices.extend_from_slice(&quad_verts);
                             indices.extend_from_slice(&[
@@ -588,6 +591,33 @@ impl GreedyMesher {
         }
 
         SectionMesh { vertices, indices }
+    }
+
+    /// Meshes all visible chunk sections across the entire world into a single combined mesh.
+    pub fn mesh_entire_world(
+        world: &casx_world::WorldStorage,
+        atlas: &casx_assets::TextureAtlas,
+    ) -> SectionMesh {
+        let mut combined_vertices = Vec::new();
+        let mut combined_indices = Vec::new();
+
+        for (&(cx, cz), column) in &world.chunks {
+            for &sec_y in column.sections.keys() {
+                if sec_y >= 0 {
+                    let sec_mesh = Self::mesh_world_section(world, cx, cz, sec_y as u8, atlas);
+                    let base_idx = combined_vertices.len() as u32;
+                    combined_vertices.extend_from_slice(&sec_mesh.vertices);
+                    for idx in sec_mesh.indices {
+                        combined_indices.push(base_idx + idx);
+                    }
+                }
+            }
+        }
+
+        SectionMesh {
+            vertices: combined_vertices,
+            indices: combined_indices,
+        }
     }
 }
 

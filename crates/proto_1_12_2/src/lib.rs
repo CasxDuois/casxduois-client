@@ -1,4 +1,4 @@
-//! Bo dieu hop giao thuc Minecraft 1.12.2 (Protocol 340).
+//! Minecraft 1.12.2 protocol adapter (Protocol 340).
 
 use bytes::{Buf, BufMut, BytesMut};
 use casx_core::codec::{

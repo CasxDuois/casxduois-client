@@ -192,7 +192,7 @@ mod tests {
             assert_eq!(
                 decode_block_pos_1_12_2(packed_112),
                 (x, y, z),
-                "1.12.2 block pos codec loi tai {:?}",
+                "1.12.2 block pos codec failure at {:?}",
                 (x, y, z)
             );
 
@@ -200,7 +200,7 @@ mod tests {
             assert_eq!(
                 decode_block_pos_26_2(packed_262),
                 (x, y, z),
-                "26.2 block pos codec loi tai {:?}",
+                "26.2 block pos codec failure at {:?}",
                 (x, y, z)
             );
         }

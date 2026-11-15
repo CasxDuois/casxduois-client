@@ -47,7 +47,52 @@ impl BitStorageV340 {
         })
     }
 
-    /// Lay gia tri raw tai chi so index (0 <= index < size)
+    pub fn new_empty(bits_per_entry: u8, size: usize) -> Result<Self, PaletteError> {
+        if bits_per_entry == 0 || bits_per_entry > 16 {
+            return Err(PaletteError::InvalidBitsPerEntry(bits_per_entry));
+        }
+        let expected_u64 = (size * bits_per_entry as usize).div_ceil(64);
+        let mask = (1u64 << bits_per_entry) - 1;
+        Ok(Self {
+            bits_per_entry,
+            size,
+            mask,
+            data: vec![0u64; expected_u64],
+        })
+    }
+
+    /// Sets the raw value at the specified index (0 <= index < size).
+    pub fn set(&mut self, index: usize, val: u16) {
+        if index >= self.size {
+            return;
+        }
+
+        let b = self.bits_per_entry as usize;
+        let start_bit = index * b;
+        let start_index = start_bit / 64;
+        let bit_offset = start_bit % 64;
+        let val_masked = (val as u64) & self.mask;
+
+        if bit_offset + b <= 64 {
+            self.data[start_index] &= !(self.mask << bit_offset);
+            self.data[start_index] |= val_masked << bit_offset;
+        } else {
+            let end_index = start_index + 1;
+            let bits_in_first = 64 - bit_offset;
+            let mask1 = (1u64 << bits_in_first) - 1;
+            self.data[start_index] &= !(mask1 << bit_offset);
+            self.data[start_index] |= (val_masked & mask1) << bit_offset;
+
+            if end_index < self.data.len() {
+                let bits_in_second = b - bits_in_first;
+                let mask2 = (1u64 << bits_in_second) - 1;
+                self.data[end_index] &= !mask2;
+                self.data[end_index] |= (val_masked >> bits_in_first) & mask2;
+            }
+        }
+    }
+
+    /// Retrieves the raw value at the specified index (0 <= index < size).
     pub fn get(&self, index: usize) -> u16 {
         if index >= self.size {
             return 0;
@@ -95,7 +140,7 @@ pub enum SectionPaletteV340 {
         palette: Vec<u16>,
         storage: BitStorageV340,
     },
-    /// Che do Direct Global ID (bits_per_entry > 8, thong thuong la 13 bits)
+    /// Direct Global ID mode (bits_per_entry > 8, typically 13 bits).
     Direct {
         bits_per_entry: u8,
         storage: BitStorageV340,
@@ -103,6 +148,33 @@ pub enum SectionPaletteV340 {
 }
 
 impl SectionPaletteV340 {
+    pub fn new_direct() -> Self {
+        let storage = BitStorageV340::new_empty(13, BitStorageV340::SECTION_BLOCK_COUNT)
+            .expect("Valid 13-bit storage");
+        Self::Direct {
+            bits_per_entry: 13,
+            storage,
+        }
+    }
+
+    /// Sets global block state at local coordinates (x, y, z).
+    pub fn set_block_state(&mut self, x: usize, y: usize, z: usize, state: u16) {
+        if x >= 16 || y >= 16 || z >= 16 {
+            return;
+        }
+        let index = (y << 8) | (z << 4) | x;
+        match self {
+            Self::Direct { storage, .. } => storage.set(index, state),
+            Self::Indirect {
+                palette, storage, ..
+            } => {
+                if let Some(pos) = palette.iter().position(|&s| s == state) {
+                    storage.set(index, pos as u16);
+                }
+            }
+        }
+    }
+
     /// Initializes Section from bit storage and palette passed in Chunk Data (0x20).
     pub fn from_packet_data(
         bits_per_entry: u8,
@@ -309,6 +381,13 @@ mod tests {
 
         let storage = BitStorageV340::new(5, 4096, data).unwrap();
         assert_eq!(storage.get(12), 27);
+
+        // Test set and get roundtrip spanning u64 boundary
+        let mut empty = BitStorageV340::new_empty(5, 4096).unwrap();
+        empty.set(12, 27);
+        assert_eq!(empty.get(12), 27);
+        assert_eq!(empty.get(11), 0);
+        assert_eq!(empty.get(13), 0);
     }
 
     #[test]

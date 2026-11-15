@@ -290,6 +290,78 @@ impl WorldStorage {
         let (id, _meta) = SectionPaletteV340::unpack_block_id_meta(state);
         id != 0 && id != 8 && id != 9 && id != 10 && id != 11
     }
+
+    /// Generates a standard 5x5 offline flatland world from chunk (-2, -2) to (2, 2).
+    /// Layer distribution:
+    /// - Y = 0: Bedrock (ID 7)
+    /// - Y = 1..=59: Stone (ID 1)
+    /// - Y = 60..=62: Dirt (ID 3)
+    /// - Y = 63: Grass Block (ID 2)
+    /// - Y >= 64: Air (ID 0)
+    pub fn generate_flat_test_world(&mut self) {
+        self.chunks.clear();
+        self.override_blocks.clear();
+        self.default_min_y = 0;
+        self.default_height = 256;
+
+        let mut sec0 = SectionPaletteV340::new_direct();
+        for x in 0..16 {
+            for z in 0..16 {
+                sec0.set_block_state(x, 0, z, 7 << 4);
+                for y in 1..16 {
+                    sec0.set_block_state(x, y, z, 1 << 4);
+                }
+            }
+        }
+
+        let mut sec1 = SectionPaletteV340::new_direct();
+        for x in 0..16 {
+            for z in 0..16 {
+                for y in 0..16 {
+                    sec1.set_block_state(x, y, z, 1 << 4);
+                }
+            }
+        }
+
+        let sec2 = sec1.clone();
+
+        let mut sec3 = SectionPaletteV340::new_direct();
+        for x in 0..16 {
+            for z in 0..16 {
+                for y in 0..12 {
+                    sec3.set_block_state(x, y, z, 1 << 4);
+                }
+                for y in 12..15 {
+                    sec3.set_block_state(x, y, z, 3 << 4);
+                }
+                sec3.set_block_state(x, 15, z, 2 << 4);
+            }
+        }
+
+        for cx in -2..=2 {
+            for cz in -2..=2 {
+                let mut col = ChunkColumn::new(cx, cz);
+                col.sections.insert(
+                    0,
+                    ChunkSection::new_v340(0, sec0.clone(), vec![0; 2048], Some(vec![0xFF; 2048])),
+                );
+                col.sections.insert(
+                    1,
+                    ChunkSection::new_v340(1, sec1.clone(), vec![0; 2048], Some(vec![0xFF; 2048])),
+                );
+                col.sections.insert(
+                    2,
+                    ChunkSection::new_v340(2, sec2.clone(), vec![0; 2048], Some(vec![0xFF; 2048])),
+                );
+                col.sections.insert(
+                    3,
+                    ChunkSection::new_v340(3, sec3.clone(), vec![0; 2048], Some(vec![0xFF; 2048])),
+                );
+                col.biomes = Some(vec![1; 256]);
+                self.chunks.insert((cx, cz), col);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -311,6 +383,36 @@ mod tests {
         assert!(storage.is_solid_block(0, 64, 0));
         assert!(!storage.is_solid_block(0, 65, 0));
         assert!(!storage.is_solid_block(1, 64, 0));
+    }
+
+    #[test]
+    fn test_generate_flat_test_world() {
+        let mut world = WorldStorage::new();
+        world.generate_flat_test_world();
+
+        assert_eq!(world.chunks.len(), 25);
+        // Bedrock at Y=0
+        assert_eq!(world.get_block_state(0, 0, 0), 7 << 4);
+        assert!(world.is_solid_block(0, 0, 0));
+
+        // Stone at Y=30
+        assert_eq!(world.get_block_state(0, 30, 0), 1 << 4);
+        assert!(world.is_solid_block(0, 30, 0));
+
+        // Dirt at Y=61
+        assert_eq!(world.get_block_state(0, 61, 0), 3 << 4);
+        assert!(world.is_solid_block(0, 61, 0));
+
+        // Grass at Y=63
+        assert_eq!(world.get_block_state(0, 63, 0), 2 << 4);
+        assert!(world.is_solid_block(0, 63, 0));
+
+        // Air at Y=64
+        assert_eq!(world.get_block_state(0, 64, 0), 0);
+        assert!(!world.is_solid_block(0, 64, 0));
+
+        // Border chunks: (-32, 63, 31)
+        assert_eq!(world.get_block_state(-32, 63, 31), 2 << 4);
     }
 
     #[test]

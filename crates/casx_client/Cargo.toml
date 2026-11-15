@@ -33,4 +33,5 @@ glam = { workspace = true }
 pollster = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+bytemuck = { workspace = true }
 bytes = { workspace = true }

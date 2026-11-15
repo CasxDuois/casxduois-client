@@ -44,7 +44,22 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let tex_layer = (in.data1 >> 16u) & 0xFFFFu;
     let sky_light = f32((in.data1 >> 12u) & 0x0Fu);
 
-    let world_pos = vec4<f32>(x, y, z, 1.0);
+    let cx_bits = (in.data1 >> 8u) & 0x0Fu;
+    let cy_bits = (in.data1 >> 4u) & 0x0Fu;
+    let cz_bits = in.data1 & 0x0Fu;
+    var world_x = x;
+    var world_y = y;
+    var world_z = z;
+    if (cx_bits != 0u || cy_bits != 0u || cz_bits != 0u) {
+        let cx = f32(cx_bits) - 8.0;
+        let cy = f32(cy_bits);
+        let cz = f32(cz_bits) - 8.0;
+        world_x = world_x + (cx * 16.0);
+        world_y = world_y + (cy * 16.0);
+        world_z = world_z + (cz * 16.0);
+    }
+
+    let world_pos = vec4<f32>(world_x, world_y, world_z, 1.0);
     out.clip_position = camera.view_proj * world_pos;
     out.uv = vec2<f32>(u_coord, v_coord);
     out.texture_layer = tex_layer;

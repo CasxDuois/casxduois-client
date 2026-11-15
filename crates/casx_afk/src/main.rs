@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut session = SessionV340::new(&args.nick);
     let mut world = WorldStorage::new();
-    let mut simulation = PlayerSimulation::new(DVec3::new(0.0, 64.0, 0.0));
+    let mut simulation = PlayerSimulation::new(DVec3::new(0.0, 70.0, 0.0));
 
     let stream_result = TcpStream::connect((host, port)).await;
 
@@ -76,11 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "Connection to {} failed: {}. Running local offline physics test.",
                     args.server, e
                 );
-                for x in -2..=2 {
-                    for z in -2..=2 {
-                        world.set_block(x, 63, z, 1);
-                    }
-                }
+                world.generate_flat_test_world();
                 for tick in 1..=20 {
                     simulation.tick(&world);
                     debug!(

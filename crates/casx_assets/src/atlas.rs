@@ -81,7 +81,7 @@ impl TextureAtlas {
         }
     }
 
-    /// Lay Texture ID tuong ung voi Block ID 1.12.2 va mat phang (0..5: Down, Up, North, South, West, East)
+    /// Returns the texture ID corresponding to the Minecraft 1.12.2 block ID and face (0..5: Down, Up, North, South, West, East).
     pub fn get_block_texture_id(&self, block_id: u16, _meta: u8, face: u8) -> u16 {
         match block_id {
             1 => TEX_STONE,

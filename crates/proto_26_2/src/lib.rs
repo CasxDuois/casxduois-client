@@ -1,4 +1,4 @@
-//! Bo dieu hop giao thuc Minecraft 26.2 (Protocol 770 / Configuration Phase & PalettedContainer).
+//! Minecraft 26.2 protocol adapter (Protocol 770 / Configuration Phase & PalettedContainer).
 
 use bytes::{Buf, BufMut, BytesMut};
 use casx_core::codec::{read_string, read_varint, write_string, write_varint};
@@ -302,8 +302,8 @@ impl ProtocolAdapter for Proto26_2 {
                 ConnectionState::Configuration => {
                     match packet_id {
                         0x03 => {
-                            // FinishConfiguration (0x03): Server hoan tat cau hinh
-                            // Client phai gui phan hoi AcknowledgeFinishConfiguration (0x03)
+                            // FinishConfiguration (0x03): Server completed configuration phase.
+                            // Client must respond with AcknowledgeFinishConfiguration (0x03).
                             let mut ack = BytesMut::new();
                             write_varint(&mut ack, 0x03);
                             let framed = format_packet_payload(&ack, self.compression_threshold)?;
