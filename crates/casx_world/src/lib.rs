@@ -2,4 +2,4 @@
 
 pub mod region;
 
-pub use region::{ChunkColumnV340, ChunkSectionV340, WorldError, WorldStorage};
+pub use region::{ChunkColumn, ChunkColumnV340, ChunkSection, ChunkSectionV340, SectionData, WorldError, WorldStorage};

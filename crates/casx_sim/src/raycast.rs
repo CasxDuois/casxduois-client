@@ -162,12 +162,12 @@ mod tests {
         let palette = vec![0, 16];
         let section = SectionPaletteV340::from_packet_data(4, Some(palette), data).unwrap();
         let mut col = ChunkColumnV340::new(0, 0);
-        col.sections.insert(4, ChunkSectionV340 {
-            y_index: 4,
-            palette: section,
-            block_light: vec![15; 2048],
-            sky_light: None,
-        });
+        col.sections.insert(4, ChunkSectionV340::new_v340(
+            4,
+            section,
+            vec![15; 2048],
+            None,
+        ));
         world.chunks.insert((0, 0), col);
 
         // Ban tia tu (0.5, 66.0, 0.5) huong thang xuong duoi (0, -1, 0)

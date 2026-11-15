@@ -367,12 +367,12 @@ mod tests {
         let palette = vec![0, 16]; // stone
         let section = SectionPaletteV340::from_packet_data(4, Some(palette), data).unwrap();
         let mut col = ChunkColumnV340::new(0, 0);
-        col.sections.insert(4, ChunkSectionV340 {
-            y_index: 4,
-            palette: section,
-            block_light: vec![15; 2048],
-            sky_light: None,
-        });
+        col.sections.insert(4, ChunkSectionV340::new_v340(
+            4,
+            section,
+            vec![15; 2048],
+            None,
+        ));
         world.chunks.insert((0, 0), col);
 
         let mesh = GreedyMesher::mesh_world_section(&world, 0, 0, 4, &atlas);
