@@ -11,6 +11,12 @@ pub mod crypto;
 pub mod compression;
 pub mod nbt;
 pub mod chat_parser;
+pub mod world;
+pub mod physics;
+pub mod raycast;
+pub mod inventory;
+pub mod native_mods;
+pub mod ctl_server;
 
 use thiserror::Error;
 

@@ -95,3 +95,131 @@ fn test_parity_chat_formatting_pipeline() {
     assert_eq!(json_spans[0].color, [255, 0, 85]);
     assert!(json_spans[0].bold);
 }
+
+use casx_core::ctl_server::CasxCtlServer;
+use casx_core::native_mods::{CasxNativeMod, FreelookMod, HookContext};
+use casx_core::physics::{Aabb, LocalPlayerPhysics};
+use casx_core::raycast::{ray_intersects_aabb, raycast_block, BlockFace};
+use casx_core::world::{CanonicalBlockState, ChunkColumn, ClientWorldCache};
+use glam::{DVec3, IVec3};
+
+#[test]
+fn test_parity_freefall_gravity_20_tps() {
+    let world = ClientWorldCache::new();
+    let mut physics = LocalPlayerPhysics::default();
+    physics.curr_pos = DVec3::new(0.0, 100.0, 0.0);
+    physics.prev_pos = physics.curr_pos;
+
+    // Mo phong 10 ticks roi tu do khong co vat can
+    for _ in 0..10 {
+        physics.step_physics_tick(&world, 0.0, 0.0, false);
+    }
+
+    // Kiem tra van toc va vi tri theo cong thuc v_y = (v_y - 0.08) * 0.98
+    assert!(physics.curr_pos.y < 96.5 && physics.curr_pos.y > 95.5);
+    assert!(!physics.on_ground);
+}
+
+#[test]
+fn test_parity_ground_landing_and_collision() {
+    let mut world = ClientWorldCache::new();
+    let mut chunk = ChunkColumn::new(0, 0, 0, 16);
+    let stone = CanonicalBlockState::new(1, 0);
+
+    for x in 0..16 {
+        for z in 0..16 {
+            chunk.set_block(x, 60, z, stone);
+        }
+    }
+    world.insert_chunk(chunk);
+
+    let mut physics = LocalPlayerPhysics::default();
+    physics.curr_pos = DVec3::new(8.0, 63.0, 8.0);
+
+    for _ in 0..20 {
+        physics.step_physics_tick(&world, 0.0, 0.0, false);
+    }
+
+    assert_eq!(physics.curr_pos.y, 61.0);
+    assert!(physics.on_ground);
+}
+
+#[test]
+fn test_parity_3d_dda_raycast_voxel_faces() {
+    let mut world = ClientWorldCache::new();
+    let mut chunk = ChunkColumn::new(0, 0, 0, 16);
+    let stone = CanonicalBlockState::new(1, 0);
+    chunk.set_block(5, 64, 5, stone);
+    world.insert_chunk(chunk);
+
+    // 1. Nhin tu phia Tay sang Dong (X+): phai cham vao mat West cua khoi
+    let origin_west = DVec3::new(2.0, 64.5, 5.5);
+    let hit_west = raycast_block(&world, origin_west, DVec3::new(1.0, 0.0, 0.0), 5.0).expect("Hit West");
+    assert_eq!(hit_west.block_pos, IVec3::new(5, 64, 5));
+    assert_eq!(hit_west.face, BlockFace::West);
+
+    // 2. Nhin tu tren xuong (Y-): phai cham vao mat Top cua khoi
+    let origin_top = DVec3::new(5.5, 68.0, 5.5);
+    let hit_top = raycast_block(&world, origin_top, DVec3::new(0.0, -1.0, 0.0), 5.0).expect("Hit Top");
+    assert_eq!(hit_top.block_pos, IVec3::new(5, 64, 5));
+    assert_eq!(hit_top.face, BlockFace::Top);
+}
+
+#[test]
+fn test_parity_ray_intersects_aabb_pvp_hitbox() {
+    let player_aabb = Aabb::new(
+        DVec3::new(9.7, 60.0, 9.7),
+        DVec3::new(10.3, 61.8, 10.3),
+    );
+
+    let eye_origin = DVec3::new(10.0, 61.5, 7.0);
+    let attack_dir = DVec3::new(0.0, 0.0, 1.0);
+
+    let hit = ray_intersects_aabb(eye_origin, attack_dir, &player_aabb, 4.0);
+    assert!(hit.is_some());
+    let distance = hit.unwrap();
+    assert!((distance - 2.7).abs() < 1e-4);
+}
+
+#[test]
+fn test_parity_freelook_independent_angles() {
+    let mut freelook = FreelookMod::default();
+    let mut render_yaw = 0.0f32;
+    let mut render_pitch = 0.0f32;
+    let mut render_fov = 70.0f32;
+
+    let mut ctx = HookContext {
+        player_pos: DVec3::ZERO,
+        server_yaw: 90.0,
+        server_pitch: 15.0,
+        render_yaw: &mut render_yaw,
+        render_pitch: &mut render_pitch,
+        render_fov: &mut render_fov,
+        is_alt_held: true,
+        is_zoom_held: false,
+    };
+
+    freelook.on_camera_update(&mut ctx);
+    assert_eq!(*ctx.render_yaw, 90.0);
+
+    freelook.free_yaw = 270.0;
+    freelook.on_camera_update(&mut ctx);
+    assert_eq!(*ctx.render_yaw, 270.0);
+    assert_eq!(ctx.server_yaw, 90.0); // Khong bi thay doi goc nhin gui len server
+}
+
+#[test]
+fn test_parity_ctl_json_rpc_telemetry_flow() {
+    let ctl = CasxCtlServer::default();
+
+    let req_status = r#"{"jsonrpc":"2.0","method":"casx.status","id":100}"#;
+    let res = ctl.handle_request(req_status);
+    let json: serde_json::Value = serde_json::from_str(&res).expect("Valid JSON");
+    assert_eq!(json["result"]["in_game"], false);
+    assert_eq!(json["id"], 100);
+
+    let req_chat = r#"{"jsonrpc":"2.0","method":"casx.chat","params":{"message":"/login password123"},"id":101}"#;
+    let res_chat = ctl.handle_request(req_chat);
+    let json_chat: serde_json::Value = serde_json::from_str(&res_chat).expect("Valid JSON");
+    assert_eq!(json_chat["result"]["sent"], true);
+}
