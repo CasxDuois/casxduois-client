@@ -4,6 +4,7 @@ members = [
     "crates/casx_core",
     "crates/proto_1_12_2",
     "crates/proto_26_2",
+    "crates/casx_render",
 ]
 resolver = "2"
 
