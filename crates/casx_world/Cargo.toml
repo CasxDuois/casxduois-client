@@ -1,0 +1,9 @@
+[package]
+name = "casx-world"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+casx_core = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

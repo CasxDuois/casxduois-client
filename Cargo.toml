@@ -2,6 +2,10 @@
 members = [
     "crates/casx_platform",
     "crates/casx_core",
+    "crates/casx_net",
+    "crates/casx_world",
+    "crates/casx_sim",
+    "crates/casx_afk",
     "crates/proto_1_12_2",
     "crates/proto_26_2",
     "crates/casx_render",
@@ -13,6 +17,10 @@ resolver = "2"
 [workspace.dependencies]
 casx_platform = { path = "crates/casx_platform" }
 casx_core = { path = "crates/casx_core" }
+casx_net = { path = "crates/casx_net" }
+casx_world = { path = "crates/casx_world" }
+casx_sim = { path = "crates/casx_sim" }
+casx_afk = { path = "crates/casx_afk" }
 proto_1_12_2 = { path = "crates/proto_1_12_2" }
 proto_26_2 = { path = "crates/proto_26_2" }
 casx_render = { path = "crates/casx_render" }
@@ -33,6 +41,7 @@ md-5 = "0.10"
 sha1 = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
 winit = "0.30"
 wgpu = "22.1"
 egui = "0.29"

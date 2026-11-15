@@ -18,6 +18,8 @@ pub mod inventory;
 pub mod native_mods;
 pub mod ctl_server;
 pub mod adapter;
+pub mod palette;
+pub mod jmath;
 
 pub use adapter::{ClientAction, ConnectionState, GameVersion, ProtocolAdapter, ServerEvent};
 

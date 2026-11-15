@@ -1,0 +1,10 @@
+[package]
+name = "casx-sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+casx_core = { workspace = true }
+casx-world = { path = "../casx_world" }
+thiserror = { workspace = true }
+log = { workspace = true }

@@ -1,0 +1,12 @@
+[package]
+name = "casx-net"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+casx_core = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+flate2 = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
