@@ -1,0 +1,25 @@
+[package]
+name = "casx_client"
+version = "0.1.0"
+edition = "2021"
+description = "Main executable entry point connecting all layers for CasxDuois Client (Layer 4)"
+
+[dependencies]
+casx_platform = { workspace = true }
+casx_core = { workspace = true }
+proto_1_12_2 = { workspace = true }
+proto_26_2 = { workspace = true }
+casx_render = { workspace = true }
+casx_ui = { workspace = true }
+winit = { workspace = true }
+wgpu = { workspace = true }
+egui = { workspace = true }
+egui-winit = { workspace = true }
+egui-wgpu = { workspace = true }
+tokio = { workspace = true }
+crossbeam-channel = { workspace = true }
+glam = { workspace = true }
+pollster = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+bytes = { workspace = true }

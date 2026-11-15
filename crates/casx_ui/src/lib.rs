@@ -1,0 +1,318 @@
+//! Giao dien hop nhat HoYoPlay Hub x Legacy Launcher x Lunar Client HUD bang egui.
+
+use casx_core::GameVersion;
+use egui::{Align2, Color32, Pos2, Rounding, Stroke, Vec2};
+
+/// Kieu tai khoan nguoi choi
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountType {
+    Offline,
+    ElyBy,
+    Microsoft,
+}
+
+/// Che do man hinh hien tai cua ung dung
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenMode {
+    Hub,         // Sanh cho HoYoPlay Hub
+    InGame,      // Trong the gioi 3D
+    ModSettings, // Bang cai dat Mod (Right Shift)
+}
+
+/// Hanh dong phat sinh tu giao dien nguoi dung can Engine xu ly
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiAction {
+    None,
+    ConnectServer {
+        host: String,
+        port: u16,
+        username: String,
+        version: GameVersion,
+    },
+    Disconnect,
+    SwitchVersion(GameVersion),
+}
+
+/// Widget HUD trong game co the keo-tha va hut tu tinh
+#[derive(Debug, Clone)]
+pub struct HudWidget {
+    pub name: &'static str,
+    pub pos: Pos2,
+    pub enabled: bool,
+}
+
+/// Bo dieu phoi toan bo giao dien CasxDuois Client
+pub struct CasxUiApp {
+    pub screen_mode: ScreenMode,
+    pub account_type: AccountType,
+    pub username: String,
+    pub server_address: String,
+    pub selected_version: GameVersion,
+    pub keystrokes_enabled: bool,
+    pub cps_counter_enabled: bool,
+    pub fps_ping_enabled: bool,
+    pub lmb_cps: u32,
+    pub rmb_cps: u32,
+    pub key_w: bool,
+    pub key_a: bool,
+    pub key_s: bool,
+    pub key_d: bool,
+    pub key_space: bool,
+}
+
+impl Default for CasxUiApp {
+    fn default() -> Self {
+        Self {
+            screen_mode: ScreenMode::Hub,
+            account_type: AccountType::Offline,
+            username: "CasxPlayer".to_string(),
+            server_address: "127.0.0.1:25565".to_string(),
+            selected_version: GameVersion::V1_12_2,
+            keystrokes_enabled: true,
+            cps_counter_enabled: true,
+            fps_ping_enabled: true,
+            lmb_cps: 0,
+            rmb_cps: 0,
+            key_w: false,
+            key_a: false,
+            key_s: false,
+            key_d: false,
+            key_space: false,
+        }
+    }
+}
+
+impl CasxUiApp {
+    /// Ve toan bo giao dien dua theo che do man hinh va du lieu thoi gian thuc
+    pub fn render(
+        &mut self,
+        ctx: &egui::Context,
+        in_game: bool,
+        fps: f64,
+        ping_ms: u32,
+    ) -> UiAction {
+        let mut action = UiAction::None;
+
+        if !in_game {
+            // 1. Man hinh sanh cho HoYoPlay Hub x Legacy Quick-Switch Bar
+            action = self.render_hub(ctx);
+        } else {
+            // 2. Lớp phu Lunar Client HUD trong game
+            self.render_in_game_hud(ctx, fps, ping_ms);
+
+            // 3. Bang dieu khien Mod Menu khi nhan Right Shift
+            if self.screen_mode == ScreenMode::ModSettings {
+                self.render_mod_settings(ctx);
+            }
+        }
+
+        action
+    }
+
+    /// Ve Sanh cho HoYoPlay Hub va thanh Legacy Quick-Switch Bar
+    fn render_hub(&mut self, ctx: &egui::Context) -> UiAction {
+        let mut action = UiAction::None;
+
+        // Banner chinh giua phong cach HoYoPlay Hub
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(Color32::from_rgb(15, 18, 26)))
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(80.0);
+                    ui.heading(
+                        egui::RichText::new("CASXDUOIS CLIENT")
+                            .size(38.0)
+                            .strong()
+                            .color(Color32::from_rgb(220, 230, 255)),
+                    );
+                    ui.label(
+                        egui::RichText::new("Multiplayer-Only State-Driven Minecraft Engine")
+                            .size(16.0)
+                            .color(Color32::from_rgb(120, 140, 180)),
+                    );
+
+                    ui.add_space(40.0);
+                    let version_label = match self.selected_version {
+                        GameVersion::V1_12_2 => "Dang chon: Minecraft 1.12.2 (Protocol 340)",
+                        GameVersion::V26_2 => "Dang chon: Minecraft 26.2 Next-Gen (Protocol 770)",
+                    };
+                    ui.label(
+                        egui::RichText::new(version_label)
+                            .size(15.0)
+                            .color(Color32::from_rgb(100, 220, 160)),
+                    );
+                });
+            });
+
+        // Thanh dieu khien Legacy Quick-Switch Bar o day man hinh
+        egui::TopBottomPanel::bottom("legacy_quick_switch_bar")
+            .min_height(70.0)
+            .frame(egui::Frame::none().fill(Color32::from_rgb(22, 27, 38)))
+            .show(ctx, |ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.add_space(20.0);
+
+                    // Chon tai khoan (Offline / Ely.by / Microsoft)
+                    ui.label(egui::RichText::new("Tai khoan:").color(Color32::WHITE));
+                    ui.selectable_value(&mut self.account_type, AccountType::Offline, "Offline");
+                    ui.selectable_value(&mut self.account_type, AccountType::ElyBy, "Ely.by");
+                    ui.selectable_value(&mut self.account_type, AccountType::Microsoft, "Microsoft");
+
+                    ui.add_space(15.0);
+                    ui.label(egui::RichText::new("Ten:").color(Color32::WHITE));
+                    ui.add(egui::TextEdit::singleline(&mut self.username).desired_width(110.0));
+
+                    ui.add_space(15.0);
+                    // Nut trao doi nong phien ban (Hot-Switch 1.12.2 <-> 26.2)
+                    let btn_ver_text = match self.selected_version {
+                        GameVersion::V1_12_2 => "[1.12.2]",
+                        GameVersion::V26_2 => "[26.2]",
+                    };
+                    if ui.button(egui::RichText::new(btn_ver_text).strong().color(Color32::YELLOW)).clicked() {
+                        self.selected_version = match self.selected_version {
+                            GameVersion::V1_12_2 => GameVersion::V26_2,
+                            GameVersion::V26_2 => GameVersion::V1_12_2,
+                        };
+                        action = UiAction::SwitchVersion(self.selected_version);
+                    }
+
+                    ui.add_space(15.0);
+                    ui.label(egui::RichText::new("Server:").color(Color32::WHITE));
+                    ui.add(egui::TextEdit::singleline(&mut self.server_address).desired_width(160.0));
+
+                    ui.add_space(25.0);
+                    // Nut ket noi lon noi bat
+                    let connect_btn = egui::Button::new(
+                        egui::RichText::new("KET NOI SERVER")
+                            .size(16.0)
+                            .strong()
+                            .color(Color32::BLACK),
+                    )
+                    .fill(Color32::from_rgb(0, 220, 130))
+                    .min_size(Vec2::new(170.0, 42.0));
+
+                    if ui.add(connect_btn).clicked() {
+                        let parts: Vec<&str> = self.server_address.split(':').collect();
+                        let host = parts.first().unwrap_or(&"127.0.0.1").to_string();
+                        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(25565);
+
+                        action = UiAction::ConnectServer {
+                            host,
+                            port,
+                            username: self.username.clone(),
+                            version: self.selected_version,
+                        };
+                    }
+                });
+            });
+
+        action
+    }
+
+    /// Ve cac Widget HUD Lunar Client tren man hinh
+    fn render_in_game_hud(&self, ctx: &egui::Context, fps: f64, ping_ms: u32) {
+        // 1. FPS & Ping Widget (Goc tren ben trai)
+        if self.fps_ping_enabled {
+            egui::Area::new(egui::Id::new("hud_fps_ping"))
+                .fixed_pos(Pos2::new(12.0, 12.0))
+                .show(ctx, |ui| {
+                    let frame = egui::Frame::none()
+                        .fill(Color32::from_rgba_premultiplied(0, 0, 0, 150))
+                        .rounding(Rounding::same(4.0))
+                        .stroke(Stroke::new(1.0f32, Color32::from_rgba_premultiplied(255, 255, 255, 40)))
+                        .inner_margin(6.0);
+
+                    frame.show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(format!("{:.0} FPS | {} ms", fps, ping_ms))
+                                .size(14.0)
+                                .color(Color32::GREEN)
+                                .strong(),
+                        );
+                    });
+                });
+        }
+
+        // 2. Keystrokes Widget (Goc giua ben trai)
+        if self.keystrokes_enabled {
+            egui::Area::new(egui::Id::new("hud_keystrokes"))
+                .fixed_pos(Pos2::new(12.0, 50.0))
+                .show(ctx, |ui| {
+                    let frame = egui::Frame::none()
+                        .fill(Color32::from_rgba_premultiplied(0, 0, 0, 140))
+                        .rounding(Rounding::same(4.0))
+                        .inner_margin(4.0);
+
+                    frame.show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            Self::render_key_box(ui, "W", self.key_w, 40.0, 36.0);
+                            ui.horizontal(|ui| {
+                                Self::render_key_box(ui, "A", self.key_a, 40.0, 36.0);
+                                Self::render_key_box(ui, "S", self.key_s, 40.0, 36.0);
+                                Self::render_key_box(ui, "D", self.key_d, 40.0, 36.0);
+                            });
+                            Self::render_key_box(ui, "SPACE", self.key_space, 126.0, 24.0);
+                        });
+                    });
+                });
+        }
+    }
+
+    fn render_key_box(ui: &mut egui::Ui, text: &str, active: bool, w: f32, h: f32) {
+        let (fill, stroke_col, text_col) = if active {
+            (Color32::from_rgba_premultiplied(255, 255, 255, 180), Color32::WHITE, Color32::BLACK)
+        } else {
+            (Color32::from_rgba_premultiplied(0, 0, 0, 120), Color32::from_rgba_premultiplied(255, 255, 255, 50), Color32::WHITE)
+        };
+
+        let frame = egui::Frame::none()
+            .fill(fill)
+            .rounding(Rounding::same(3.0))
+            .stroke(Stroke::new(1.0f32, stroke_col));
+
+        frame.show(ui, |ui| {
+            ui.set_min_size(Vec2::new(w, h));
+            ui.centered_and_justified(|ui| {
+                ui.label(egui::RichText::new(text).size(13.0).strong().color(text_col));
+            });
+        });
+    }
+
+    /// Ve Bang cai dat Mod (Right Shift Mod Settings)
+    fn render_mod_settings(&mut self, ctx: &egui::Context) {
+        egui::Window::new("Lunar Mod Settings (Right Shift)")
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .resizable(false)
+            .collapsible(false)
+            .min_width(320.0)
+            .show(ctx, |ui| {
+                ui.heading("Cai Dat Native Rust Mods");
+                ui.add_space(8.0);
+
+                ui.checkbox(&mut self.fps_ping_enabled, "Hien thi FPS & Ping");
+                ui.checkbox(&mut self.keystrokes_enabled, "Hien thi Keystrokes (WASD)");
+                ui.checkbox(&mut self.cps_counter_enabled, "Hien thi LMB / RMB CPS");
+
+                ui.add_space(12.0);
+                if ui.button("Dong Cai Dat").clicked() {
+                    self.screen_mode = ScreenMode::InGame;
+                }
+            });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ui_initial_state_and_version_switch() {
+        let mut app = CasxUiApp::default();
+        assert_eq!(app.screen_mode, ScreenMode::Hub);
+        assert_eq!(app.selected_version, GameVersion::V1_12_2);
+
+        // Kiem tra chuyen doi phien ban
+        app.selected_version = GameVersion::V26_2;
+        assert_eq!(app.selected_version, GameVersion::V26_2);
+    }
+}

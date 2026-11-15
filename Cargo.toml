@@ -5,12 +5,19 @@ members = [
     "crates/proto_1_12_2",
     "crates/proto_26_2",
     "crates/casx_render",
+    "crates/casx_ui",
+    "crates/casx_client",
 ]
 resolver = "2"
 
 [workspace.dependencies]
 casx_platform = { path = "crates/casx_platform" }
 casx_core = { path = "crates/casx_core" }
+proto_1_12_2 = { path = "crates/proto_1_12_2" }
+proto_26_2 = { path = "crates/proto_26_2" }
+casx_render = { path = "crates/casx_render" }
+casx_ui = { path = "crates/casx_ui" }
+casx_client = { path = "crates/casx_client" }
 sysinfo = "0.31"
 bytes = "1.7"
 tokio = { version = "1.40", features = ["net", "io-util", "rt-multi-thread", "sync", "macros", "time"] }
