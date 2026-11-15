@@ -3,6 +3,94 @@
 use glam::IVec3;
 use std::collections::HashMap;
 
+/// Toa do cot Chunk 2D trong the gioi (Chunk X, Chunk Z)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+pub struct ChunkPos {
+    pub x: i32,
+    pub z: i32,
+}
+
+impl ChunkPos {
+    pub const fn new(x: i32, z: i32) -> Self {
+        Self { x, z }
+    }
+}
+
+/// Dinh danh khoi tieu chuan hoa (Canonical Block State Id)
+///
+/// Ho tro tra cuu truc tiep cac dac tinh vat ly:
+/// - 1.12.2: (block_id << 4) | meta
+/// - 26.2: Global Registry State ID tu PalettedContainer
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+pub struct CanonicalBlockStateId(pub u32);
+
+impl CanonicalBlockStateId {
+    pub const AIR: Self = Self(0);
+
+    pub fn from_v340(block_id: u16, meta: u8) -> Self {
+        Self(((block_id as u32) << 4) | ((meta as u32) & 0x0F))
+    }
+
+    pub fn to_v340(&self) -> (u16, u8) {
+        let block_id = (self.0 >> 4) as u16;
+        let meta = (self.0 & 0x0F) as u8;
+        (block_id, meta)
+    }
+
+    pub fn from_v776_global(global_id: u32) -> Self {
+        Self(global_id)
+    }
+
+    pub fn is_air(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn is_solid(&self) -> bool {
+        let block_id = (self.0 >> 4) as u16;
+        !self.is_air() && block_id != 8 && block_id != 9 && block_id != 10 && block_id != 11
+    }
+
+    pub fn is_opaque(&self) -> bool {
+        let block_id = (self.0 >> 4) as u16;
+        self.is_solid() && block_id != 20 && block_id != 95 // Glass / stained glass
+    }
+
+    pub fn light_emission(&self) -> u8 {
+        let block_id = (self.0 >> 4) as u16;
+        match block_id {
+            10 | 11 => 15, // Lava
+            50 => 14,      // Torch
+            89 => 15,      // Glowstone
+            124 => 15,     // Redstone Lamp on
+            _ => 0,
+        }
+    }
+
+    pub fn aabb(&self, x: i32, y: i32, z: i32) -> crate::jmath::AABB {
+        crate::jmath::AABB::from_block(crate::jmath::IVec3::new(x, y, z))
+    }
+
+    pub fn face_uvs(&self) -> [u16; 6] {
+        let block_id = (self.0 >> 4) as u16;
+        let tex = match block_id {
+            1 => 1,  // Stone
+            2 => 2,  // Grass
+            3 => 4,  // Dirt
+            4 => 5,  // Cobblestone
+            5 => 6,  // Planks
+            7 => 7,  // Bedrock
+            12 => 8, // Sand
+            13 => 9, // Gravel
+            17 => 10,// Log
+            18 => 12,// Leaves
+            20 => 13,// Glass
+            8 | 9 => 14, // Water
+            _ => 1,
+        };
+        [tex; 6]
+    }
+}
+
 /// Trang thai khoi tieu chuan hoa (Canonical Block State)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CanonicalBlockState {

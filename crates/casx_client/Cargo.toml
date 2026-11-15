@@ -20,6 +20,7 @@ proto_26_2 = { workspace = true }
 casx_render = { workspace = true }
 casx_ui = { workspace = true }
 casx_launcher = { path = "../casx_launcher" }
+clap = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 egui = { workspace = true }

@@ -22,6 +22,9 @@ pub mod palette;
 pub mod jmath;
 
 pub use adapter::{ClientAction, ConnectionState, GameVersion, ProtocolAdapter, ServerEvent};
+pub use inventory::{CanonicalItemStack, ItemStack};
+pub use jmath::{AABB, DVec3, IVec3};
+pub use world::{CanonicalBlockState, CanonicalBlockStateId, ChunkPos, ChunkSection};
 
 use thiserror::Error;
 

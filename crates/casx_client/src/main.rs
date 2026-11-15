@@ -1,16 +1,11 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! Diem vao thuc thi chinh cua CasxDuois Client (Tang 4 trong do thi phu thuoc DAG).
 //!
-//! Lien ket toan bo cac phan he:
-//! - Tang 1: casx_platform (Telemetry, nano-timer, OS detection)
-//! - Tang 2: casx_core (WorldCache, 20 TPS physics, DDA raycast, NBT, ctl_server, jmath)
-//! - Tang 2.5: casx_assets (TextureAtlas, Procedural texture fallback)
-//! - Tang 3A: proto_1_12_2 (Protocol 340) & casx_net (Tokio TCP, SessionV340)
-//! - Tang 3B: proto_26_2 (Protocol 770)
-//! - Tang 3C: casx_render (wgpu, 64-bit vertex, 6-face Greedy Mesher, Frustum culling)
-//! - Tang 3D: casx_ui (egui HoYoPlay Hub x Legacy Quick-Switch x Lunar HUD)
-//! - Tang 3E: casx_sim (Swept AABB, 20 TPS physics loop, DDA raycast selection)
+//! Dong goi 1 file duy nhat CasxDuois.exe ho tro 2 che do:
+//! - Che do 1: In-Window Morphing (Mo truc tiep Launcher Hub -> Vao game 3D trong 0.1s)
+//! - Che do 2: Subprocess Spawn (--mode client/afk --ver 340/776 qua std::env::current_exe())
 
-use casx_assets::{generate_procedural_atlas, TextureAtlas};
+use casx_assets::{generate_procedural_atlas, AssetBootstrapper, TextureAtlas};
 use casx_core::ctl_server::CasxCtlServer;
 use casx_core::jmath::DVec3;
 use casx_core::physics::LocalPlayerPhysics;
@@ -19,12 +14,38 @@ use casx_core::{GameVersion, ProtocolAdapter};
 use casx_launcher::{LaunchTarget, LauncherState};
 use casx_net::session::v340::SessionV340;
 use casx_platform::{HighResolutionTimer, PlatformTelemetry};
+use casx_render::RenderPipeline5Pass;
 use casx_sim::{raycast_world, PlayerSimulation, VoxelHit};
 use casx_ui::{CasxUiApp, ScreenMode, UiAction};
 use casx_world::WorldStorage;
+use clap::Parser;
 use proto_1_12_2::Proto1_12_2;
 use proto_26_2::Proto26_2;
-use std::env;
+
+/// Doi so dong lenh cho CasxDuois.exe (Hybrid Single-Binary)
+#[derive(Parser, Debug, Clone, PartialEq)]
+#[command(name = "CasxDuois", version = "0.1.0", about = "CasxDuois Multiplayer-Only Client Engine")]
+pub struct CasxCliArgs {
+    /// Che do van hanh: "client" (3D co giao dien) hoac "afk" (Headless Eco-AFK < 15MB RAM)
+    #[arg(short, long, default_value = "client")]
+    pub mode: String,
+
+    /// Phien ban giao thuc: "340" (1.12.2) hoac "776" (26.2) hoac "auto"
+    #[arg(long, default_value = "340")]
+    pub ver: String,
+
+    /// Dia chi may chu dang host:port (vi du: aemine.net:25565 hoac 127.0.0.1:25565)
+    #[arg(short, long)]
+    pub server: Option<String>,
+
+    /// Ten nguoi choi hoac nickname bot
+    #[arg(short, long)]
+    pub nick: Option<String>,
+
+    /// Co tuong thich nguoc cho che do headless afk
+    #[arg(long)]
+    pub headless_afk: bool,
+}
 
 /// May trang thai van hanh cua Engine
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +61,8 @@ pub enum EngineStage {
 pub struct ClientApp {
     pub stage: EngineStage,
     pub launcher: LauncherState,
+    pub bootstrapper: AssetBootstrapper,
+    pub pipeline: RenderPipeline5Pass,
     pub telemetry: PlatformTelemetry,
     pub timer: HighResolutionTimer,
     pub world: ClientWorldCache,
@@ -50,7 +73,7 @@ pub struct ClientApp {
     pub in_game: bool,
     pub ping_ms: u32,
 
-    // Cac thanh phan nang cao Giai doan 2
+    // Cac thanh phan nang cao Giai doan 2 & 5
     pub atlas: TextureAtlas,
     pub world_storage: WorldStorage,
     pub sim: PlayerSimulation,
@@ -78,7 +101,11 @@ impl ClientApp {
         let active_protocol: Box<dyn ProtocolAdapter> = Box::new(Proto1_12_2::new());
         let ui = CasxUiApp::default();
 
-        let (_pixels, atlas) = generate_procedural_atlas();
+        let mut bootstrapper = AssetBootstrapper::new();
+        let (_pixels, fallback_atlas) = generate_procedural_atlas();
+        let atlas = bootstrapper.bootstrap().cloned().unwrap_or(fallback_atlas);
+        let pipeline = RenderPipeline5Pass::new();
+
         let world_storage = WorldStorage::new();
         let sim = PlayerSimulation::new(DVec3::new(0.0, 64.0, 0.0));
 
@@ -89,6 +116,8 @@ impl ClientApp {
         Self {
             stage: EngineStage::Launcher,
             launcher: LauncherState::default(),
+            bootstrapper,
+            pipeline,
             telemetry,
             timer,
             world,
@@ -167,6 +196,13 @@ impl ClientApp {
             );
 
             self.target_block = raycast_world(&self.world_storage, eye_pos, look_dir, 4.5);
+            if let Some(ref hit) = self.target_block {
+                self.pipeline.set_targeted_block_outline(Some(casx_core::physics::Aabb::from_block(
+                    glam::IVec3::new(hit.block_pos.x, hit.block_pos.y, hit.block_pos.z),
+                )));
+            } else {
+                self.pipeline.set_targeted_block_outline(None);
+            }
         }
 
         // Dong bo hoa trang thai vao ctl_server de phan hoi JSON-RPC
@@ -239,20 +275,51 @@ impl ClientApp {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let args: Vec<String> = env::args().collect();
+    // Phan tich tham so dong lenh CLI (Hybrid Single-Binary)
+    let args = CasxCliArgs::parse();
 
-    // Neu duoc goi o che do Eco-AFK chay ngam khong dung GPU
-    if args.iter().any(|arg| arg == "--headless-afk") {
-        println!("[INFO] [casx_client::afk] Chay che do Eco-AFK tien trinh con");
+    // Che do 2: Subprocess Spawn Eco-AFK (Headless runner < 15MB RAM)
+    if args.mode == "afk" || args.headless_afk {
+        let host = args.server.unwrap_or_else(|| "127.0.0.1:25565".to_string());
+        let nick = args.nick.unwrap_or_else(|| "EcoBot".to_string());
+        println!(
+            "[INFO] [casx_client::afk] Khoi chay tien trinh con Eco-AFK Headless (Server: {}, Nick: {}, Ver: {})",
+            host, nick, args.ver
+        );
+
+        // Vong lap headless 20 TPS mo phong (tiet kiem RAM < 15MB)
+        let world = WorldStorage::new();
+        let mut sim = PlayerSimulation::new(DVec3::new(0.0, 64.0, 0.0));
+        for _ in 0..10 {
+            sim.tick(&world);
+        }
+        println!("[INFO] [casx_client::afk] Hoan tat chu ky test Eco-AFK bot, thoat tien trinh.");
         return;
     }
 
+    // Che do 1: 3D Client (In-Window Morphing hoac Ket noi thang qua CLI)
     let mut app = ClientApp::new();
 
-    println!("[INFO] [casx_client::main] Khoi chay thanh cong Client Engine!");
-    println!("[INFO] [casx_client::main] Sanh cho HoYoPlay Hub da san sang tren do phan giai goc.");
+    if let Some(srv) = args.server {
+        let nick = args.nick.unwrap_or_else(|| "CasxPlayer".to_string());
+        let ver = if args.ver == "776" { GameVersion::V26_2 } else { GameVersion::V1_12_2 };
+        let parts: Vec<&str> = srv.split(':').collect();
+        let host = parts.first().unwrap_or(&"127.0.0.1").to_string();
+        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(25565);
 
-    // Chay gia lap 5 chu ky vong lap chinh
+        println!("[INFO] [casx_client::cli] Khoi chay ket noi truc tiep toi {}:{}", host, port);
+        app.handle_ui_action(UiAction::ConnectServer {
+            host,
+            port,
+            username: nick,
+            version: ver,
+        });
+    } else {
+        println!("[INFO] [casx_client::main] Khoi chay thanh cong Client Engine!");
+        println!("[INFO] [casx_client::main] Sanh cho HoYoPlay Hub da san sang tren do phan giai goc.");
+    }
+
+    // Chay gia lap 5 chu ky vong lap chinh de kiem tra do on dinh
     for _ in 0..5 {
         app.update_tick();
     }
@@ -304,7 +371,7 @@ mod tests {
         let mut app = ClientApp::new();
         assert_eq!(app.stage, EngineStage::Launcher);
 
-        // Khoi chay truc tiep tu Launcher
+        // Khoi chay truc tiep tu Launcher (In-Window Morphing)
         app.launch_from_launcher();
         assert_eq!(app.stage, EngineStage::InGame);
         assert!(app.in_game);
@@ -319,5 +386,31 @@ mod tests {
         app.launch_from_launcher();
         assert_eq!(app.launcher.afk_manager.active_count(), 1);
         assert!(app.launcher.afk_manager.total_memory_consumption_mb() <= 15.0);
+    }
+
+    #[test]
+    fn test_cli_args_parsing() {
+        // Test mac dinh
+        let args_default = CasxCliArgs::parse_from(&["CasxDuois"]);
+        assert_eq!(args_default.mode, "client");
+        assert_eq!(args_default.ver, "340");
+        assert!(args_default.server.is_none());
+
+        // Test Eco-AFK mode voi 26.2
+        let args_afk = CasxCliArgs::parse_from(&[
+            "CasxDuois",
+            "--mode",
+            "afk",
+            "--ver",
+            "776",
+            "--server",
+            "aemine.net:25565",
+            "--nick",
+            "BotAlpha",
+        ]);
+        assert_eq!(args_afk.mode, "afk");
+        assert_eq!(args_afk.ver, "776");
+        assert_eq!(args_afk.server.as_deref(), Some("aemine.net:25565"));
+        assert_eq!(args_afk.nick.as_deref(), Some("BotAlpha"));
     }
 }

@@ -12,10 +12,12 @@ pub mod mesher;
 pub mod shader;
 pub mod kawase;
 pub mod indirect;
+pub mod pipeline;
 
 pub use frustum::{Frustum, Plane};
 pub use indirect::{DrawIndexedIndirectArgs, IndirectBatchManager};
 pub use mesher::{compute_ao, GreedyMesher, SectionMesh};
+pub use pipeline::RenderPipeline5Pass;
 pub use vertex::PackedVertex;
 
 use bytemuck::{Pod, Zeroable};

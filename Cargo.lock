@@ -396,6 +396,7 @@ dependencies = [
  "casx_platform",
  "casx_render",
  "casx_ui",
+ "clap",
  "crossbeam-channel",
  "egui",
  "egui-wgpu",

@@ -111,6 +111,29 @@ impl AfkSessionManager {
             .filter(|s| s.status == AfkStatus::Running)
             .count()
     }
+
+    /// Khoi chay mot tien trinh con CasxDuois.exe o che do Eco-AFK qua std::env::current_exe()
+    pub fn spawn_subprocess_afk(config: &AfkSessionConfig) -> Result<u32, std::io::Error> {
+        if let Ok(exe_path) = std::env::current_exe() {
+            let ver_str = match config.protocol_version {
+                GameVersion::V1_12_2 => "340",
+                GameVersion::V26_2 => "776",
+            };
+            let child = std::process::Command::new(exe_path)
+                .arg("--mode")
+                .arg("afk")
+                .arg("--ver")
+                .arg(ver_str)
+                .arg("--server")
+                .arg(&config.server_address)
+                .arg("--nick")
+                .arg(&config.bot_nickname)
+                .spawn()?;
+            Ok(child.id())
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Khong tim thay current_exe"))
+        }
+    }
 }
 
 #[cfg(test)]

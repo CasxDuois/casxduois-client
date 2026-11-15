@@ -43,6 +43,53 @@ impl ItemStack {
     }
 }
 
+/// Vat pham tieu chuan hoa xuyen suot giua 1.12.2 va 26.2 (Canonical ItemStack)
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CanonicalItemStack {
+    pub id: u32,
+    pub count: u8,
+    pub damage: u16,
+    pub custom_model_data: Option<i32>,
+    pub display_name: Option<String>,
+    pub lore: Vec<String>,
+}
+
+impl Default for CanonicalItemStack {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl CanonicalItemStack {
+    pub const EMPTY: Self = Self {
+        id: 0,
+        count: 0,
+        damage: 0,
+        custom_model_data: None,
+        display_name: None,
+        lore: Vec::new(),
+    };
+
+    pub fn empty() -> Self {
+        Self::EMPTY
+    }
+
+    pub fn new(id: u32, count: u8, damage: u16) -> Self {
+        Self {
+            id,
+            count,
+            damage,
+            custom_model_data: None,
+            display_name: None,
+            lore: Vec::new(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.id == 0 || self.count == 0
+    }
+}
+
 /// Giao dien cua so Container cua Server (Ruong, Ban che tao, Menu NPC)
 #[derive(Debug, Clone)]
 pub struct ContainerWindow {
