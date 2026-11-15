@@ -17,6 +17,9 @@ pub mod raycast;
 pub mod inventory;
 pub mod native_mods;
 pub mod ctl_server;
+pub mod adapter;
+
+pub use adapter::{ClientAction, ConnectionState, GameVersion, ProtocolAdapter, ServerEvent};
 
 use thiserror::Error;
 

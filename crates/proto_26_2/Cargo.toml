@@ -1,0 +1,11 @@
+[package]
+name = "proto_26_2"
+version = "0.1.0"
+edition = "2021"
+description = "Minecraft 26.2 (Protocol 770) network protocol adapter with Configuration Phase and PalettedContainer for CasxDuois Client (Layer 3B)"
+
+[dependencies]
+casx_core = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

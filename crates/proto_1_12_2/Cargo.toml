@@ -1,0 +1,11 @@
+[package]
+name = "proto_1_12_2"
+version = "0.1.0"
+edition = "2021"
+description = "Minecraft 1.12.2 (Protocol 340) network protocol adapter for CasxDuois Client (Layer 3A)"
+
+[dependencies]
+casx_core = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

@@ -47,6 +47,8 @@ dependencies = [
  "hex",
  "log",
  "md-5",
+ "proto_1_12_2",
+ "proto_26_2",
  "serde",
  "serde_json",
  "sha1",
@@ -264,6 +266,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proto_1_12_2"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "casx_core",
+ "log",
+ "thiserror",
+]
+
+[[package]]
+name = "proto_26_2"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "casx_core",
+ "log",
+ "thiserror",
 ]
 
 [[package]]

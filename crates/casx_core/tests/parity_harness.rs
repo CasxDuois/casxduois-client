@@ -223,3 +223,44 @@ fn test_parity_ctl_json_rpc_telemetry_flow() {
     let json_chat: serde_json::Value = serde_json::from_str(&res_chat).expect("Valid JSON");
     assert_eq!(json_chat["result"]["sent"], true);
 }
+
+use casx_core::{ClientAction, GameVersion, ProtocolAdapter};
+use proto_1_12_2::Proto1_12_2;
+use proto_26_2::Proto26_2;
+
+#[test]
+fn test_parity_hot_switch_protocol_adapters() {
+    // 1. Khoi tao Adapter 1.12.2
+    let mut adapter: Box<dyn ProtocolAdapter> = Box::new(Proto1_12_2::new());
+    assert_eq!(adapter.version(), GameVersion::V1_12_2);
+
+    let mut buf_112 = BytesMut::new();
+    adapter
+        .encode_action(
+            ClientAction::InitiateLogin {
+                server_host: "hypixel.net".to_string(),
+                server_port: 25565,
+                username: "Tester112".to_string(),
+            },
+            &mut buf_112,
+        )
+        .expect("Encode 1.12.2 Handshake");
+    assert!(!buf_112.is_empty());
+
+    // 2. Trao doi nong (Hot-Switch trong 0ms) sang Adapter 26.2
+    adapter = Box::new(Proto26_2::new());
+    assert_eq!(adapter.version(), GameVersion::V26_2);
+
+    let mut buf_262 = BytesMut::new();
+    adapter
+        .encode_action(
+            ClientAction::InitiateLogin {
+                server_host: "modern.server".to_string(),
+                server_port: 25565,
+                username: "Tester262".to_string(),
+            },
+            &mut buf_262,
+        )
+        .expect("Encode 26.2 Handshake");
+    assert!(!buf_262.is_empty());
+}

@@ -20,3 +20,5 @@ log = { workspace = true }
 
 [dev-dependencies]
 hex = "0.4"
+proto_1_12_2 = { path = "../proto_1_12_2" }
+proto_26_2 = { path = "../proto_26_2" }
