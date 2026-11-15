@@ -2,7 +2,7 @@
 name = "casx_ui"
 version = "0.1.0"
 edition = "2021"
-description = "Unified graphical user interface (HoYoPlay Hub x Legacy Quick-Switch x Lunar Client HUD) with egui (Layer 3D)"
+description = "Immediate-mode and retained UI overlay passes for launcher and HUD."
 
 [dependencies]
 casx_core = { workspace = true }

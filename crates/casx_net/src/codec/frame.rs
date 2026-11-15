@@ -1,9 +1,9 @@
 // crates/casx_net/src/codec/frame.rs
-// Khung goi tin Minecraft: [Length: VarInt] + [Packet ID: VarInt] + [Payload]
+// Minecraft packet frame: [Length: VarInt] + [Packet ID: VarInt] + [Payload]
 
+use super::varint::{read_varint_from_buf, varint_len, write_varint_to_buf};
 use bytes::{Bytes, BytesMut};
 use casx_core::ProtocolError;
-use super::varint::{read_varint_from_buf, write_varint_to_buf, varint_len};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawPacket {
@@ -16,7 +16,7 @@ impl RawPacket {
         Self { id, payload }
     }
 
-    /// Giai ma 1 khung packet tu buffer BytesMut
+    /// Decodes a packet frame from BytesMut buffer
     pub fn decode(src: &mut BytesMut) -> Result<Option<Self>, ProtocolError> {
         let mut temp = src.clone();
         if let Some(length) = read_varint_from_buf(&mut temp)? {
@@ -24,10 +24,10 @@ impl RawPacket {
             let total_len = length_len + length as usize;
 
             if src.len() < total_len {
-                return Ok(None); // Chua du byte goi tin
+                return Ok(None); // Incomplete packet bytes
             }
 
-            // Da du byte, doc thuc su tu src
+            // Sufficient bytes available, consume from src
             let _ = read_varint_from_buf(src)?;
             let mut packet_data = src.split_to(length as usize);
             if let Some(packet_id) = read_varint_from_buf(&mut packet_data)? {
@@ -44,7 +44,7 @@ impl RawPacket {
         }
     }
 
-    /// Ma hoa 1 packet thanh BytesMut de gui qua TCP socket
+    /// Encodes packet into BytesMut for TCP socket transmission
     pub fn encode(&self, dst: &mut BytesMut) {
         let id_len = varint_len(self.id);
         let total_length = id_len + self.payload.len();

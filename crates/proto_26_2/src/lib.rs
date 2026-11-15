@@ -32,8 +32,8 @@ impl Proto26_2 {
         }
     }
 
-    /// Giai ma PalettedContainer trong Chunk Section cua 26.2:
-    /// Ho tro ca Single-Valued (0 bits), Indirect Palette (4..8 bits), va Direct Palette (>= 15 bits).
+    /// Decodes PalettedContainer in a 26.2 Chunk Section:
+    /// Supports Single-Valued (0 bits), Indirect Palette (4..8 bits), and Direct Palette (>= 15 bits).
     pub fn decode_section_26_2(buf: &mut impl Buf) -> Result<ChunkSection, ProtocolError> {
         if buf.remaining() < 3 {
             return Err(ProtocolError::UnexpectedEof);
@@ -42,17 +42,19 @@ impl Proto26_2 {
         let non_air_count = buf.get_u16();
         let bits_per_entry = buf.get_u8() as usize;
 
-        let mut section = ChunkSection::default();
-        section.non_air_count = non_air_count;
+        let mut section = ChunkSection {
+            non_air_count,
+            ..Default::default()
+        };
 
         if bits_per_entry == 0 {
-            // Single-valued palette: toan bo 4096 khoi co cung mot trang thai
+            // Single-valued palette: all 4096 blocks share the same state
             let state_id = read_varint(buf)? as u16;
             let _data_len = read_varint(buf)?;
             let state = CanonicalBlockState::new(state_id, 0);
             section.blocks.fill(state);
         } else if (4..=8).contains(&bits_per_entry) {
-            // Indirect Palette: doc bang tra cuu palette roi doc mang bit u64
+            // Indirect Palette: read palette table then bit-packed u64 array
             let palette_len = read_varint(buf)? as usize;
             let mut palette = Vec::with_capacity(palette_len);
             for _ in 0..palette_len {
@@ -76,7 +78,8 @@ impl Proto26_2 {
                 let word_idx = i / entries_per_word;
                 let sub_idx = i % entries_per_word;
                 if word_idx < data_words.len() {
-                    let palette_idx = ((data_words[word_idx] >> (sub_idx * bits_per_entry)) & mask) as usize;
+                    let palette_idx =
+                        ((data_words[word_idx] >> (sub_idx * bits_per_entry)) & mask) as usize;
                     let block_id = if palette_idx < palette.len() {
                         palette[palette_idx]
                     } else {
@@ -86,7 +89,7 @@ impl Proto26_2 {
                 }
             }
         } else {
-            // Direct Palette (bits_per_entry >= 15): moi muc la ID trang thai truc tiep
+            // Direct Palette (bits_per_entry >= 15): each entry is a direct state ID
             let data_array_len = read_varint(buf)? as usize;
             if buf.remaining() < data_array_len * 8 {
                 return Err(ProtocolError::UnexpectedEof);
@@ -104,7 +107,8 @@ impl Proto26_2 {
                 let word_idx = i / entries_per_word;
                 let sub_idx = i % entries_per_word;
                 if word_idx < data_words.len() {
-                    let state_id = ((data_words[word_idx] >> (sub_idx * bits_per_entry)) & mask) as u16;
+                    let state_id =
+                        ((data_words[word_idx] >> (sub_idx * bits_per_entry)) & mask) as u16;
                     section.blocks[i] = CanonicalBlockState::new(state_id, 0);
                 }
             }
@@ -127,24 +131,28 @@ impl ProtocolAdapter for Proto26_2 {
         self.compression_threshold
     }
 
-    fn encode_action(&mut self, action: ClientAction, out_buf: &mut BytesMut) -> Result<(), ProtocolError> {
+    fn encode_action(
+        &mut self,
+        action: ClientAction,
+        out_buf: &mut BytesMut,
+    ) -> Result<(), ProtocolError> {
         match action {
             ClientAction::InitiateLogin {
                 server_host,
                 server_port,
                 username,
             } => {
-                // 1. Goi Handshake (ID 0x00)
+                // 1. Handshake Packet (ID 0x00)
                 let mut hs = BytesMut::new();
                 write_varint(&mut hs, 0x00);
                 write_varint(&mut hs, 770); // Protocol 770 (26.2 Next-Gen)
                 write_string(&mut hs, &server_host);
                 hs.put_u16(server_port);
-                write_varint(&mut hs, 2);   // Next state: Login (2)
+                write_varint(&mut hs, 2); // Next state: Login (2)
                 let framed_hs = format_packet_payload(&hs, None)?;
                 out_buf.put(framed_hs);
 
-                // 2. Goi LoginStart (ID 0x00 tren 26.2 gom ca Username va UUID 128-bit)
+                // 2. LoginStart Packet (ID 0x00 on 26.2 with Username and 128-bit UUID)
                 let mut login = BytesMut::new();
                 write_varint(&mut login, 0x00);
                 write_string(&mut login, &username);
@@ -157,7 +165,7 @@ impl ProtocolAdapter for Proto26_2 {
             }
             ClientAction::KeepAliveResponse { keep_alive_id } => {
                 let mut payload = BytesMut::new();
-                write_varint(&mut payload, 0x18); // KeepAlive ID tren 26.2 Play
+                write_varint(&mut payload, 0x18); // KeepAlive ID on 26.2 Play
                 payload.put_i64(keep_alive_id);
                 let framed = format_packet_payload(&payload, self.compression_threshold)?;
                 out_buf.put(framed);
@@ -211,7 +219,7 @@ impl ProtocolAdapter for Proto26_2 {
                 payload.put_u8(button);
                 write_varint(&mut payload, mode);
                 write_varint(&mut payload, 0); // 0 changed slots
-                payload.put_i16(-1);           // Empty carried item
+                payload.put_i16(-1); // Empty carried item
                 let framed = format_packet_payload(&payload, self.compression_threshold)?;
                 out_buf.put(framed);
             }
@@ -269,13 +277,14 @@ impl ProtocolAdapter for Proto26_2 {
                             };
                             let username = read_string(&mut payload_buf, 16)?;
 
-                            // 26.2: Sau khi nhan LoginSuccess (0x02), bat buoc phai gui LoginAcknowledged (0x03)
+                            // 26.2: Must send LoginAcknowledged (0x03) upon receiving LoginSuccess (0x02)
                             let mut ack = BytesMut::new();
-                            write_varint(&mut ack, 0x03); // LoginAcknowledged ID 0x03
-                            let framed_ack = format_packet_payload(&ack, self.compression_threshold)?;
+                            write_varint(&mut ack, 0x03);
+                            let framed_ack =
+                                format_packet_payload(&ack, self.compression_threshold)?;
                             out_auto_reply.put(framed_ack);
 
-                            // Chuyen sang trang thai Configuration
+                            // Transition into Configuration state
                             self.state = ConnectionState::Configuration;
                             events.push(ServerEvent::LoginSuccess {
                                 uuid: format!("{:032x}", uuid_bytes),
@@ -304,8 +313,8 @@ impl ProtocolAdapter for Proto26_2 {
                             events.push(ServerEvent::ConfigurationComplete);
                         }
                         0x0E => {
-                            // SelectKnownPacks (0x0E tren 26.2 Configuration)
-                            // Phan hoi SelectKnownPacks (0x07) rong de dong y dung core pack
+                            // SelectKnownPacks (0x0E on 26.2 Configuration)
+                            // Respond with empty SelectKnownPacks (0x07) to accept server core packs
                             let mut reply = BytesMut::new();
                             write_varint(&mut reply, 0x07);
                             write_varint(&mut reply, 0); // 0 known packs
@@ -318,7 +327,7 @@ impl ProtocolAdapter for Proto26_2 {
                 ConnectionState::Play => {
                     match packet_id {
                         0x2B => {
-                            // LoginPlay (0x2B tren 26.2)
+                            // LoginPlay (0x2B on 26.2)
                             let entity_id = payload_buf.get_i32();
                             events.push(ServerEvent::JoinServerWorld {
                                 entity_id,
@@ -329,7 +338,10 @@ impl ProtocolAdapter for Proto26_2 {
                         0x26 => {
                             // KeepAlive (0x26 tren 26.2)
                             let keep_alive_id = payload_buf.get_i64();
-                            let _ = self.encode_action(ClientAction::KeepAliveResponse { keep_alive_id }, out_auto_reply);
+                            let _ = self.encode_action(
+                                ClientAction::KeepAliveResponse { keep_alive_id },
+                                out_auto_reply,
+                            );
                             events.push(ServerEvent::KeepAliveRequest { keep_alive_id });
                         }
                         0x40 => {
@@ -342,7 +354,10 @@ impl ProtocolAdapter for Proto26_2 {
                             let _flags = payload_buf.get_u32();
                             let teleport_id = read_varint(&mut payload_buf)?;
 
-                            let _ = self.encode_action(ClientAction::ConfirmTeleport { teleport_id }, out_auto_reply);
+                            let _ = self.encode_action(
+                                ClientAction::ConfirmTeleport { teleport_id },
+                                out_auto_reply,
+                            );
                             events.push(ServerEvent::SynchronizePlayerPosition {
                                 x,
                                 y,
@@ -399,12 +414,12 @@ mod tests {
             .decode_packets(&mut server_buf, &mut auto_reply)
             .expect("LoginSuccess decode");
 
-        // Tren 26.2, phai chuyen sang Configuration State, va gui LoginAcknowledged (0x03)
+        // In 26.2, must enter Configuration state and emit LoginAcknowledged (0x03)
         assert_eq!(proto.current_state(), ConnectionState::Configuration);
         assert!(!auto_reply.is_empty());
         assert_eq!(events.len(), 1);
 
-        // Gia lap Server gui FinishConfiguration (0x03)
+        // Simulate server sending FinishConfiguration (0x03)
         let mut config_buf = BytesMut::new();
         let mut finish_payload = BytesMut::new();
         write_varint(&mut finish_payload, 0x03);
@@ -428,9 +443,9 @@ mod tests {
     fn test_proto_26_2_paletted_container_single_valued() {
         let mut buf = BytesMut::new();
         buf.put_u16(4096); // non_air_count
-        buf.put_u8(0);     // bits_per_entry = 0 (single-valued)
+        buf.put_u8(0); // bits_per_entry = 0 (single-valued)
         write_varint(&mut buf, 15); // Block ID 15
-        write_varint(&mut buf, 0);  // Data array len 0
+        write_varint(&mut buf, 0); // Data array len 0
 
         let mut reader = buf.freeze();
         let section = Proto26_2::decode_section_26_2(&mut reader).expect("Decode section");

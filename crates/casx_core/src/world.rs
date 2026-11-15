@@ -1,10 +1,12 @@
-//! Bo nho dem the gioi (World Cache), cau truc Chunk Column va Section cho CasxDuois Client.
+//! World storage cache, ChunkColumn, and ChunkSection primitives.
 
 use glam::IVec3;
 use std::collections::HashMap;
 
-/// Toa do cot Chunk 2D trong the gioi (Chunk X, Chunk Z)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+/// 2D Chunk column coordinates (Chunk X, Chunk Z).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub struct ChunkPos {
     pub x: i32,
     pub z: i32,
@@ -16,12 +18,14 @@ impl ChunkPos {
     }
 }
 
-/// Dinh danh khoi tieu chuan hoa (Canonical Block State Id)
+/// Canonical block state identifier.
 ///
-/// Ho tro tra cuu truc tiep cac dac tinh vat ly:
+/// Supports unified collision and visual lookups across protocols:
 /// - 1.12.2: (block_id << 4) | meta
-/// - 26.2: Global Registry State ID tu PalettedContainer
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+/// - 26.2: Global registry state ID from PalettedContainer
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub struct CanonicalBlockStateId(pub u32);
 
 impl CanonicalBlockStateId {
@@ -73,17 +77,17 @@ impl CanonicalBlockStateId {
     pub fn face_uvs(&self) -> [u16; 6] {
         let block_id = (self.0 >> 4) as u16;
         let tex = match block_id {
-            1 => 1,  // Stone
-            2 => 2,  // Grass
-            3 => 4,  // Dirt
-            4 => 5,  // Cobblestone
-            5 => 6,  // Planks
-            7 => 7,  // Bedrock
-            12 => 8, // Sand
-            13 => 9, // Gravel
-            17 => 10,// Log
-            18 => 12,// Leaves
-            20 => 13,// Glass
+            1 => 1,      // Stone
+            2 => 2,      // Grass
+            3 => 4,      // Dirt
+            4 => 5,      // Cobblestone
+            5 => 6,      // Planks
+            7 => 7,      // Bedrock
+            12 => 8,     // Sand
+            13 => 9,     // Gravel
+            17 => 10,    // Log
+            18 => 12,    // Leaves
+            20 => 13,    // Glass
             8 | 9 => 14, // Water
             _ => 1,
         };
@@ -91,7 +95,7 @@ impl CanonicalBlockStateId {
     }
 }
 
-/// Trang thai khoi tieu chuan hoa (Canonical Block State)
+/// Canonical block state representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CanonicalBlockState {
     pub id: u16,
@@ -99,24 +103,29 @@ pub struct CanonicalBlockState {
 }
 
 impl CanonicalBlockState {
-    pub const AIR: Self = Self { id: 0, meta_or_palette: 0 };
+    pub const AIR: Self = Self {
+        id: 0,
+        meta_or_palette: 0,
+    };
 
     pub fn new(id: u16, meta_or_palette: u16) -> Self {
-        Self { id, meta_or_palette }
+        Self {
+            id,
+            meta_or_palette,
+        }
     }
 
     pub fn is_air(&self) -> bool {
         self.id == 0
     }
 
-    /// Kiem tra khoi co phai khoi dac (solid collision) hay khong
+    /// Checks if block is solid for collision resolution.
     pub fn is_solid(&self) -> bool {
-        // Id 0 = air, 8/9 = water, 10/11 = lava, v.v.
         !self.is_air() && self.id != 8 && self.id != 9 && self.id != 10 && self.id != 11
     }
 }
 
-/// Mot phan doan Chunk ($16 \times 16 \times 16 = 4096$ khoi)
+/// A 16x16x16 chunk section (4096 blocks).
 #[derive(Debug, Clone)]
 pub struct ChunkSection {
     pub blocks: [CanonicalBlockState; 4096],
@@ -164,7 +173,7 @@ impl ChunkSection {
     }
 }
 
-/// Cot Chunk day du toa do $(X, Z)$ chua mang cac Section theo chieu doc
+/// Full chunk column at (X, Z) containing vertically stacked sections.
 #[derive(Debug, Clone)]
 pub struct ChunkColumn {
     pub chunk_x: i32,
@@ -228,7 +237,7 @@ impl ChunkColumn {
     }
 }
 
-/// Bo nho dem toan bo the gioi tai Client luu tru cac Chunk xung quanh nguoi choi
+/// Client-side world cache storing chunk columns loaded around player
 #[derive(Debug, Default, Clone)]
 pub struct ClientWorldCache {
     chunks: HashMap<(i32, i32), ChunkColumn>,

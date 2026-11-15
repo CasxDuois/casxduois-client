@@ -2,6 +2,7 @@
 name = "casx-sim"
 version = "0.1.0"
 edition = "2021"
+description = "Fixed 20 TPS client physics, AABB collision resolution, and inventory state."
 
 [dependencies]
 casx_core = { workspace = true }

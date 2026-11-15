@@ -1,8 +1,8 @@
-//! Cau truc dinh nen 64-bit (8 bytes) toi uu bang thong bo nho VRAM cho Voxel Rendering.
+//! 64-bit packed vertex layout (8 bytes) optimizing VRAM bandwidth for voxel rendering.
 
 use bytemuck::{Pod, Zeroable};
 
-/// Dinh nén 64-bit cho hien thi khoi Voxel ($8\text{ bytes}$ moi dinh)
+/// 64-bit packed vertex for voxel rendering ($8\text{ bytes}$ per vertex).
 ///
 /// data0 (32 bits):
 /// - X (5 bits): $0..31$
@@ -26,6 +26,7 @@ pub struct PackedVertex {
 }
 
 impl PackedVertex {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         x: u32,
         y: u32,
@@ -71,7 +72,7 @@ impl PackedVertex {
         (self.data1 >> 16) & 0xFFFF
     }
 
-    /// Mo ta bo dem dinh cho wgpu
+    /// Vertex buffer layout descriptor for wgpu
     pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,

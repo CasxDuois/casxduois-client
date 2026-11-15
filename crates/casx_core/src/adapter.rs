@@ -1,28 +1,28 @@
-//! Dinh nghia cac su kien may chu, hanh dong phia client, va trait ProtocolAdapter da phien ban.
+//! Multi-version protocol adapter trait, server events, and client actions.
 
 use crate::inventory::ItemStack;
 use crate::world::{CanonicalBlockState, ChunkColumn};
 use crate::ProtocolError;
 use bytes::BytesMut;
 
-/// Phien ban Minecraft duoc ho tro
+/// Supported Minecraft protocol targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GameVersion {
     V1_12_2,
     V26_2,
 }
 
-/// May trang thai ket noi mang Minecraft
+/// Minecraft network connection state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
     Handshaking,
     Status,
     Login,
-    Configuration, // Chi ton tai tren 26.2 (Protocol 770)
+    Configuration,
     Play,
 }
 
-/// Cac su kien nhan duoc tu May chu sau khi giai ma goi tin mang
+/// Normalized server events decoded from inbound packets.
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
     LoginSuccess {
@@ -98,7 +98,7 @@ pub enum ServerEvent {
     },
 }
 
-/// Cac hanh dong phia Client duoc ma hoa thanh goi tin gui len Server
+/// Client actions encoded into outbound network packets
 #[derive(Debug, Clone)]
 pub enum ClientAction {
     InitiateLogin {
@@ -136,13 +136,17 @@ pub enum ClientAction {
     },
 }
 
-/// Trait dieu hop giao thuc cho phep trao doi nong giua 1.12.2 va 26.2 (Hot-Switching trong 0ms)
+/// Protocol adapter trait enabling hot-switching between 1.12.2 and 26.2 with zero overhead
 pub trait ProtocolAdapter: Send + Sync {
     fn version(&self) -> GameVersion;
     fn current_state(&self) -> ConnectionState;
     fn compression_threshold(&self) -> Option<i32>;
 
-    fn encode_action(&mut self, action: ClientAction, out_buf: &mut BytesMut) -> Result<(), ProtocolError>;
+    fn encode_action(
+        &mut self,
+        action: ClientAction,
+        out_buf: &mut BytesMut,
+    ) -> Result<(), ProtocolError>;
     fn decode_packets(
         &mut self,
         in_buf: &mut BytesMut,

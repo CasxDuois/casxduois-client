@@ -1,9 +1,9 @@
-//! Quan ly danh ba may chu (Server Bookmarks), luu cache Ping va thong tin giao thuc.
+//! Server bookmarks management, ping caching, and protocol metadata.
 
 use casx_core::GameVersion;
 use serde::{Deserialize, Serialize};
 
-/// Thong tin mot may chu trong danh ba
+/// Server entry in bookmarks directory
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServerEntry {
     pub name: String,
@@ -30,13 +30,13 @@ impl ServerEntry {
         }
     }
 
-    /// Tra ve chuoi dia chi dang `host:port`
+    /// Formats address string as `host:port`
     pub fn address_string(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
 }
 
-/// Trinh quan ly danh sach bookmark may chu
+/// Server bookmarks list manager
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerListManager {
     pub servers: Vec<ServerEntry>,
@@ -46,8 +46,18 @@ pub struct ServerListManager {
 impl Default for ServerListManager {
     fn default() -> Self {
         let default_servers = vec![
-            ServerEntry::new("Aemine Server 1.12.2", "aemine.net", 25565, GameVersion::V1_12_2),
-            ServerEntry::new("Local Dev Server 26.2", "127.0.0.1", 25565, GameVersion::V26_2),
+            ServerEntry::new(
+                "Aemine Server 1.12.2",
+                "aemine.net",
+                25565,
+                GameVersion::V1_12_2,
+            ),
+            ServerEntry::new(
+                "Local Dev Server 26.2",
+                "127.0.0.1",
+                25565,
+                GameVersion::V26_2,
+            ),
         ];
 
         Self {
@@ -62,17 +72,17 @@ impl ServerListManager {
         Self::default()
     }
 
-    /// Lay may chu dang duoc chon
+    /// Retrieves currently selected server entry
     pub fn get_selected_server(&self) -> Option<&ServerEntry> {
         self.servers.get(self.selected_index)
     }
 
-    /// Them mot may chu vao danh ba
+    /// Adds a server into bookmarks
     pub fn add_server(&mut self, entry: ServerEntry) {
         self.servers.push(entry);
     }
 
-    /// Xoa mot may chu theo chi muc
+    /// Removes a server by index
     pub fn remove_server(&mut self, index: usize) -> bool {
         if index < self.servers.len() {
             self.servers.remove(index);
@@ -85,7 +95,7 @@ impl ServerListManager {
         }
     }
 
-    /// Cap nhat ket qua ping cho may chu
+    /// Updates ping and player statistics for a server
     pub fn update_ping(&mut self, index: usize, ping_ms: u32, players: u32, max_players: u32) {
         if let Some(srv) = self.servers.get_mut(index) {
             srv.ping_ms = Some(ping_ms);
@@ -108,7 +118,12 @@ mod tests {
         assert_eq!(selected.host, "aemine.net");
         assert_eq!(selected.address_string(), "aemine.net:25565");
 
-        list.add_server(ServerEntry::new("Hypixel Proxy", "mc.hypixel.net", 25565, GameVersion::V1_12_2));
+        list.add_server(ServerEntry::new(
+            "Hypixel Proxy",
+            "mc.hypixel.net",
+            25565,
+            GameVersion::V1_12_2,
+        ));
         assert_eq!(list.servers.len(), 3);
 
         list.update_ping(2, 45, 35000, 100000);

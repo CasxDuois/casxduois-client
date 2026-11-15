@@ -1,10 +1,10 @@
-//! Bo phan tich Binary NBT (Classic 1.12.2 va Nameless Network NBT 26.2).
+//! Binary NBT parser (Classic 1.12.2 and Nameless Network NBT 26.2).
 
 use crate::ProtocolError;
 use bytes::{Buf, BufMut};
 use std::collections::HashMap;
 
-/// Dinh nghia toan bo 12 the Tag NBT theo dac ta Minecraft
+/// All 12 NBT Tag types according to Minecraft specification
 #[derive(Debug, Clone, PartialEq)]
 pub enum NbtTag {
     End,
@@ -23,7 +23,7 @@ pub enum NbtTag {
 }
 
 impl NbtTag {
-    /// Tra ve ID the Tag theo dac ta NBT
+    /// Returns NBT tag ID according to specification
     pub fn tag_id(&self) -> u8 {
         match self {
             NbtTag::End => 0,
@@ -70,7 +70,7 @@ impl NbtTag {
     }
 }
 
-/// Doc Classic NBT (Minecraft 1.12.2: Tag 10 + 2-byte name + Payload)
+/// Read Classic NBT (Minecraft 1.12.2: Tag 10 + 2-byte name + Payload)
 pub fn read_classic_nbt<B: Buf>(buf: &mut B) -> Result<(String, NbtTag), ProtocolError> {
     if !buf.has_remaining() {
         return Err(ProtocolError::UnexpectedEof);
@@ -81,7 +81,7 @@ pub fn read_classic_nbt<B: Buf>(buf: &mut B) -> Result<(String, NbtTag), Protoco
     }
     if root_type != 10 {
         return Err(ProtocolError::NbtParseError(format!(
-            "Root Tag cua Classic NBT phai la Compound (10), nhan duoc: {}",
+            "Root Tag of Classic NBT must be Compound (10), got: {}",
             root_type
         )));
     }
@@ -90,7 +90,7 @@ pub fn read_classic_nbt<B: Buf>(buf: &mut B) -> Result<(String, NbtTag), Protoco
     Ok((root_name, NbtTag::Compound(payload)))
 }
 
-/// Doc Nameless Network NBT (Minecraft 26.2: Tag 10 + Payload, luoc bo ten root)
+/// Read Nameless Network NBT (Minecraft 26.2: Tag 10 + Payload, omitting root name)
 pub fn read_nameless_nbt<B: Buf>(buf: &mut B) -> Result<NbtTag, ProtocolError> {
     if !buf.has_remaining() {
         return Err(ProtocolError::UnexpectedEof);
@@ -101,7 +101,7 @@ pub fn read_nameless_nbt<B: Buf>(buf: &mut B) -> Result<NbtTag, ProtocolError> {
     }
     if root_type != 10 {
         return Err(ProtocolError::NbtParseError(format!(
-            "Root Tag cua Nameless NBT phai la Compound (10), nhan duoc: {}",
+            "Root Tag of Nameless NBT must be Compound (10), got: {}",
             root_type
         )));
     }
@@ -109,8 +109,12 @@ pub fn read_nameless_nbt<B: Buf>(buf: &mut B) -> Result<NbtTag, ProtocolError> {
     Ok(NbtTag::Compound(payload))
 }
 
-/// Ghi Classic NBT (1.12.2) vao bo dem
-pub fn write_classic_nbt<B: BufMut>(buf: &mut B, root_name: &str, tag: &NbtTag) -> Result<(), ProtocolError> {
+/// Write Classic NBT (1.12.2) into buffer
+pub fn write_classic_nbt<B: BufMut>(
+    buf: &mut B,
+    root_name: &str,
+    tag: &NbtTag,
+) -> Result<(), ProtocolError> {
     buf.put_u8(tag.tag_id());
     if tag.tag_id() == 0 {
         return Ok(());
@@ -119,7 +123,7 @@ pub fn write_classic_nbt<B: BufMut>(buf: &mut B, root_name: &str, tag: &NbtTag) 
     write_tag_payload(buf, tag)
 }
 
-/// Ghi Nameless NBT (26.2) vao bo dem
+/// Write Nameless NBT (26.2) into buffer
 pub fn write_nameless_nbt<B: BufMut>(buf: &mut B, tag: &NbtTag) -> Result<(), ProtocolError> {
     buf.put_u8(tag.tag_id());
     if tag.tag_id() == 0 {
@@ -132,40 +136,58 @@ fn read_tag_payload<B: Buf>(buf: &mut B, tag_type: u8) -> Result<NbtTag, Protoco
     match tag_type {
         0 => Ok(NbtTag::End),
         1 => {
-            if !buf.has_remaining() { return Err(ProtocolError::UnexpectedEof); }
+            if !buf.has_remaining() {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             Ok(NbtTag::Byte(buf.get_i8()))
         }
         2 => {
-            if buf.remaining() < 2 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 2 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             Ok(NbtTag::Short(buf.get_i16()))
         }
         3 => {
-            if buf.remaining() < 4 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 4 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             Ok(NbtTag::Int(buf.get_i32()))
         }
         4 => {
-            if buf.remaining() < 8 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 8 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             Ok(NbtTag::Long(buf.get_i64()))
         }
         5 => {
-            if buf.remaining() < 4 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 4 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             Ok(NbtTag::Float(buf.get_f32()))
         }
         6 => {
-            if buf.remaining() < 8 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 8 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             Ok(NbtTag::Double(buf.get_f64()))
         }
         7 => {
-            if buf.remaining() < 4 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 4 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             let len = buf.get_i32();
-            if len < 0 || buf.remaining() < len as usize { return Err(ProtocolError::UnexpectedEof); }
+            if len < 0 || buf.remaining() < len as usize {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             let mut data = vec![0u8; len as usize];
             buf.copy_to_slice(&mut data);
             Ok(NbtTag::ByteArray(data))
         }
         8 => Ok(NbtTag::String(read_nbt_string_raw(buf)?)),
         9 => {
-            if buf.remaining() < 5 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 5 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             let elem_type = buf.get_u8();
             let len = buf.get_i32();
             if len <= 0 {
@@ -179,9 +201,13 @@ fn read_tag_payload<B: Buf>(buf: &mut B, tag_type: u8) -> Result<NbtTag, Protoco
         }
         10 => Ok(NbtTag::Compound(read_compound_payload(buf)?)),
         11 => {
-            if buf.remaining() < 4 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 4 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             let len = buf.get_i32();
-            if len < 0 || buf.remaining() < (len as usize * 4) { return Err(ProtocolError::UnexpectedEof); }
+            if len < 0 || buf.remaining() < (len as usize * 4) {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             let mut list = Vec::with_capacity(len as usize);
             for _ in 0..len {
                 list.push(buf.get_i32());
@@ -189,9 +215,13 @@ fn read_tag_payload<B: Buf>(buf: &mut B, tag_type: u8) -> Result<NbtTag, Protoco
             Ok(NbtTag::IntArray(list))
         }
         12 => {
-            if buf.remaining() < 4 { return Err(ProtocolError::UnexpectedEof); }
+            if buf.remaining() < 4 {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             let len = buf.get_i32();
-            if len < 0 || buf.remaining() < (len as usize * 8) { return Err(ProtocolError::UnexpectedEof); }
+            if len < 0 || buf.remaining() < (len as usize * 8) {
+                return Err(ProtocolError::UnexpectedEof);
+            }
             let mut list = Vec::with_capacity(len as usize);
             for _ in 0..len {
                 list.push(buf.get_i64());
@@ -241,12 +271,30 @@ fn write_nbt_string_raw<B: BufMut>(buf: &mut B, s: &str) {
 fn write_tag_payload<B: BufMut>(buf: &mut B, tag: &NbtTag) -> Result<(), ProtocolError> {
     match tag {
         NbtTag::End => Ok(()),
-        NbtTag::Byte(v) => { buf.put_i8(*v); Ok(()) }
-        NbtTag::Short(v) => { buf.put_i16(*v); Ok(()) }
-        NbtTag::Int(v) => { buf.put_i32(*v); Ok(()) }
-        NbtTag::Long(v) => { buf.put_i64(*v); Ok(()) }
-        NbtTag::Float(v) => { buf.put_f32(*v); Ok(()) }
-        NbtTag::Double(v) => { buf.put_f64(*v); Ok(()) }
+        NbtTag::Byte(v) => {
+            buf.put_i8(*v);
+            Ok(())
+        }
+        NbtTag::Short(v) => {
+            buf.put_i16(*v);
+            Ok(())
+        }
+        NbtTag::Int(v) => {
+            buf.put_i32(*v);
+            Ok(())
+        }
+        NbtTag::Long(v) => {
+            buf.put_i64(*v);
+            Ok(())
+        }
+        NbtTag::Float(v) => {
+            buf.put_f32(*v);
+            Ok(())
+        }
+        NbtTag::Double(v) => {
+            buf.put_f64(*v);
+            Ok(())
+        }
         NbtTag::ByteArray(v) => {
             buf.put_i32(v.len() as i32);
             buf.put_slice(v);
@@ -306,7 +354,10 @@ mod tests {
         let mut compound = HashMap::new();
         compound.insert("Health".to_string(), NbtTag::Float(20.0));
         compound.insert("Score".to_string(), NbtTag::Int(1500));
-        compound.insert("PlayerName".to_string(), NbtTag::String("CasxTester".to_string()));
+        compound.insert(
+            "PlayerName".to_string(),
+            NbtTag::String("CasxTester".to_string()),
+        );
 
         let original_tag = NbtTag::Compound(compound);
         let mut buf = BytesMut::new();
@@ -322,7 +373,10 @@ mod tests {
     #[test]
     fn test_nameless_nbt_roundtrip() {
         let mut compound = HashMap::new();
-        compound.insert("Dimension".to_string(), NbtTag::String("minecraft:overworld".to_string()));
+        compound.insert(
+            "Dimension".to_string(),
+            NbtTag::String("minecraft:overworld".to_string()),
+        );
         compound.insert("SeaLevel".to_string(), NbtTag::Int(63));
 
         let original_tag = NbtTag::Compound(compound);

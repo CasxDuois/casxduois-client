@@ -1,8 +1,8 @@
-//! Cau hinh va bat/tat cac tien ich Native Rust Mods (phong cach Lunar Client).
+//! Native Rust mod configuration and toggles.
 
 use serde::{Deserialize, Serialize};
 
-/// Bang tong hop trang thai cac Mod tich hop san
+/// Summary configuration for built-in client mods
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModConfig {
     pub toggle_sprint: bool,
@@ -37,7 +37,7 @@ impl ModConfig {
         Self::default()
     }
 
-    /// Bat hoac tat mot mod theo dinh danh chuoi
+    /// Toggles a mod by identifier
     pub fn toggle_by_id(&mut self, mod_id: &str) -> bool {
         match mod_id {
             "toggle_sprint" => {

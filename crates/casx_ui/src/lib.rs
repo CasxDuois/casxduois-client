@@ -1,9 +1,9 @@
-//! Giao dien hop nhat HoYoPlay Hub x Legacy Launcher x Lunar Client HUD bang egui.
+//! Immediate-mode UI overlay for launcher viewport and in-game HUD using egui.
 
 use casx_core::GameVersion;
 use egui::{Align2, Color32, Pos2, Rounding, Stroke, Vec2};
 
-/// Kieu tai khoan nguoi choi
+/// Player account authentication type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountType {
     Offline,
@@ -11,15 +11,15 @@ pub enum AccountType {
     Microsoft,
 }
 
-/// Che do man hinh hien tai cua ung dung
+/// Active UI screen mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenMode {
-    Hub,         // Sanh cho HoYoPlay Hub
-    InGame,      // Trong the gioi 3D
-    ModSettings, // Bang cai dat Mod (Right Shift)
+    Hub,         // Launcher Viewport
+    InGame,      // 3D In-Game HUD
+    ModSettings, // Settings overlay (Right Shift)
 }
 
-/// Hanh dong phat sinh tu giao dien nguoi dung can Engine xu ly
+/// User interface actions dispatched to the client engine.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiAction {
     None,
@@ -35,23 +35,14 @@ pub enum UiAction {
     SelectHotbarSlot(usize),
 }
 
-/// Widget HUD trong game co the keo-tha va hut tu tinh
+/// Simplified item representation for HUD hotbar.
 #[derive(Debug, Clone)]
-pub struct HudWidget {
-    pub name: &'static str,
-    pub pos: Pos2,
-    pub enabled: bool,
-}
-
-/// Thong tin mot o tren thanh Hotbar 9 o
-#[derive(Debug, Clone, PartialEq)]
 pub struct HotbarSlot {
-    pub item_id: i32,
-    pub count: u8,
     pub display_name: String,
+    pub count: u8,
 }
 
-/// Bo dieu phoi toan bo giao dien CasxDuois Client
+/// Unified egui user interface state.
 pub struct CasxUiApp {
     pub screen_mode: ScreenMode,
     pub account_type: AccountType,
@@ -59,86 +50,94 @@ pub struct CasxUiApp {
     pub server_address: String,
     pub selected_version: GameVersion,
 
-    // Lunar Client HUD Settings
+    // In-game HUD state
+    pub fps_ping_enabled: bool,
     pub keystrokes_enabled: bool,
     pub cps_counter_enabled: bool,
-    pub fps_ping_enabled: bool,
     pub scoreboard_enabled: bool,
-    pub lmb_cps: u32,
-    pub rmb_cps: u32,
+
+    // Keystroke inputs
     pub key_w: bool,
     pub key_a: bool,
     pub key_s: bool,
     pub key_d: bool,
     pub key_space: bool,
 
-    // In-Game State
-    pub selected_hotbar_slot: usize,
+    // Hotbar state (9 slots)
     pub hotbar_slots: [Option<HotbarSlot>; 9],
+    pub selected_hotbar_slot: usize,
+
+    // Chat state
     pub chat_messages: Vec<String>,
     pub chat_input: String,
     pub is_chat_open: bool,
+
+    // Scoreboard state
     pub scoreboard_title: String,
     pub scoreboard_lines: Vec<(String, i32)>,
-    pub tab_list_players: Vec<(String, u32)>,
+
+    // Tab list
     pub is_tab_held: bool,
+    pub tab_list_players: Vec<(String, u32)>,
 }
 
 impl Default for CasxUiApp {
     fn default() -> Self {
+        let mut slots: [Option<HotbarSlot>; 9] = Default::default();
+        slots[0] = Some(HotbarSlot {
+            display_name: "Diamond Sword".to_string(),
+            count: 1,
+        });
+        slots[1] = Some(HotbarSlot {
+            display_name: "Golden Apple".to_string(),
+            count: 64,
+        });
+        slots[2] = Some(HotbarSlot {
+            display_name: "Bow".to_string(),
+            count: 1,
+        });
+
         Self {
             screen_mode: ScreenMode::Hub,
             account_type: AccountType::Offline,
             username: "CasxPlayer".to_string(),
             server_address: "127.0.0.1:25565".to_string(),
             selected_version: GameVersion::V1_12_2,
+
+            fps_ping_enabled: true,
             keystrokes_enabled: true,
             cps_counter_enabled: true,
-            fps_ping_enabled: true,
             scoreboard_enabled: true,
-            lmb_cps: 0,
-            rmb_cps: 0,
+
             key_w: false,
             key_a: false,
             key_s: false,
             key_d: false,
             key_space: false,
+
+            hotbar_slots: slots,
             selected_hotbar_slot: 0,
-            hotbar_slots: [
-                Some(HotbarSlot { item_id: 276, count: 1, display_name: "Diamond Sword".into() }),
-                Some(HotbarSlot { item_id: 278, count: 1, display_name: "Diamond Pickaxe".into() }),
-                Some(HotbarSlot { item_id: 364, count: 64, display_name: "Steak".into() }),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            ],
-            chat_messages: vec![
-                "[System] Chuyen vao the gioi thanh cong.".to_string(),
-                "[Server] Chao mung ban den voi CasxDuois Engine!".to_string(),
-            ],
+
+            chat_messages: vec!["[System] Welcome to CasxDuois Client Engine!".to_string()],
             chat_input: String::new(),
             is_chat_open: false,
-            scoreboard_title: "CASXDUOIS NETWORK".to_string(),
+
+            scoreboard_title: "CasxDuois Server".to_string(),
             scoreboard_lines: vec![
-                ("Online: 1".to_string(), 10),
-                ("Ping: 24ms".to_string(), 9),
-                ("Rank: Default".to_string(), 8),
-                ("www.casxduois.io".to_string(), 1),
+                ("Online Players: 1".to_string(), 3),
+                ("Ping: 12ms".to_string(), 2),
+                ("casxduois.io".to_string(), 1),
             ],
-            tab_list_players: vec![
-                ("CasxPlayer".to_string(), 24),
-            ],
+
             is_tab_held: false,
+            tab_list_players: vec![("CasxPlayer".to_string(), 12)],
         }
     }
 }
 
 impl CasxUiApp {
-    /// Ve toan bo giao dien dua theo che do man hinh va du lieu thoi gian thuc
-    pub fn render(
+    /// Renders current UI overlays onto egui Context and returns engine actions.
+    pub fn update(
         &mut self,
         ctx: &egui::Context,
         in_game: bool,
@@ -148,33 +147,26 @@ impl CasxUiApp {
         let mut action = UiAction::None;
 
         if !in_game {
-            // 1. Man hinh sanh cho HoYoPlay Hub x Legacy Quick-Switch Bar
             action = self.render_hub(ctx);
         } else {
-            // 2. Lop phu Lunar Client HUD trong game
             self.render_in_game_hud(ctx, fps, ping_ms);
 
-            // 3. Hotbar 9 slots o day man hinh
             if let Some(act) = self.render_hotbar(ctx) {
                 action = act;
             }
 
-            // 4. Khung Chat o goc duoi ben trai
             if let Some(act) = self.render_chat_panel(ctx) {
                 action = act;
             }
 
-            // 5. Bang diem Scoreboard o ben phai
             if self.scoreboard_enabled {
                 self.render_scoreboard(ctx);
             }
 
-            // 6. Danh sach nguoi choi Tab List o tren cung
             if self.is_tab_held {
                 self.render_tab_list(ctx);
             }
 
-            // 7. Bang dieu khien Mod Menu khi nhan Right Shift
             if self.screen_mode == ScreenMode::ModSettings {
                 self.render_mod_settings(ctx);
             }
@@ -183,11 +175,10 @@ impl CasxUiApp {
         action
     }
 
-    /// Ve Sanh cho HoYoPlay Hub va thanh Legacy Quick-Switch Bar
+    /// Renders launcher viewport and version selector.
     fn render_hub(&mut self, ctx: &egui::Context) -> UiAction {
         let mut action = UiAction::None;
 
-        // Banner chinh giua phong cach HoYoPlay Hub
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(Color32::from_rgb(15, 18, 26)))
             .show(ctx, |ui| {
@@ -200,15 +191,17 @@ impl CasxUiApp {
                             .color(Color32::from_rgb(220, 230, 255)),
                     );
                     ui.label(
-                        egui::RichText::new("Multiplayer-Only State-Driven Minecraft Engine")
-                            .size(16.0)
-                            .color(Color32::from_rgb(120, 140, 180)),
+                        egui::RichText::new(
+                            "High-Performance Rust-Native Multiplayer Minecraft Client",
+                        )
+                        .size(16.0)
+                        .color(Color32::from_rgb(120, 140, 180)),
                     );
 
                     ui.add_space(40.0);
                     let version_label = match self.selected_version {
-                        GameVersion::V1_12_2 => "Dang chon: Minecraft 1.12.2 (Protocol 340)",
-                        GameVersion::V26_2 => "Dang chon: Minecraft 26.2 Next-Gen (Protocol 776)",
+                        GameVersion::V1_12_2 => "Selected: Minecraft 1.12.2 (v340)",
+                        GameVersion::V26_2 => "Selected: Minecraft 26.2 (v776)",
                     };
                     ui.label(
                         egui::RichText::new(version_label)
@@ -218,31 +211,39 @@ impl CasxUiApp {
                 });
             });
 
-        // Thanh dieu khien Legacy Quick-Switch Bar o day man hinh
-        egui::TopBottomPanel::bottom("legacy_quick_switch_bar")
+        egui::TopBottomPanel::bottom("launcher_control_bar")
             .min_height(70.0)
             .frame(egui::Frame::none().fill(Color32::from_rgb(22, 27, 38)))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.add_space(20.0);
 
-                    // Chon tai khoan (Offline / Ely.by / Microsoft)
-                    ui.label(egui::RichText::new("Tai khoan:").color(Color32::WHITE));
+                    ui.label(egui::RichText::new("Account:").color(Color32::WHITE));
                     ui.selectable_value(&mut self.account_type, AccountType::Offline, "Offline");
                     ui.selectable_value(&mut self.account_type, AccountType::ElyBy, "Ely.by");
-                    ui.selectable_value(&mut self.account_type, AccountType::Microsoft, "Microsoft");
+                    ui.selectable_value(
+                        &mut self.account_type,
+                        AccountType::Microsoft,
+                        "Microsoft",
+                    );
 
                     ui.add_space(15.0);
-                    ui.label(egui::RichText::new("Ten:").color(Color32::WHITE));
+                    ui.label(egui::RichText::new("Username:").color(Color32::WHITE));
                     ui.add(egui::TextEdit::singleline(&mut self.username).desired_width(110.0));
 
                     ui.add_space(15.0);
-                    // Nut trao doi nong phien ban (Hot-Switch 1.12.2 <-> 26.2)
                     let btn_ver_text = match self.selected_version {
                         GameVersion::V1_12_2 => "[1.12.2]",
                         GameVersion::V26_2 => "[26.2]",
                     };
-                    if ui.button(egui::RichText::new(btn_ver_text).strong().color(Color32::YELLOW)).clicked() {
+                    if ui
+                        .button(
+                            egui::RichText::new(btn_ver_text)
+                                .strong()
+                                .color(Color32::YELLOW),
+                        )
+                        .clicked()
+                    {
                         self.selected_version = match self.selected_version {
                             GameVersion::V1_12_2 => GameVersion::V26_2,
                             GameVersion::V26_2 => GameVersion::V1_12_2,
@@ -252,12 +253,13 @@ impl CasxUiApp {
 
                     ui.add_space(15.0);
                     ui.label(egui::RichText::new("Server:").color(Color32::WHITE));
-                    ui.add(egui::TextEdit::singleline(&mut self.server_address).desired_width(160.0));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.server_address).desired_width(160.0),
+                    );
 
                     ui.add_space(25.0);
-                    // Nut ket noi lon noi bat
                     let connect_btn = egui::Button::new(
-                        egui::RichText::new("KET NOI SERVER")
+                        egui::RichText::new("CONNECT")
                             .size(16.0)
                             .strong()
                             .color(Color32::BLACK),
@@ -268,7 +270,10 @@ impl CasxUiApp {
                     if ui.add(connect_btn).clicked() {
                         let parts: Vec<&str> = self.server_address.split(':').collect();
                         let host = parts.first().unwrap_or(&"127.0.0.1").to_string();
-                        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(25565);
+                        let port = parts
+                            .get(1)
+                            .and_then(|p| p.parse::<u16>().ok())
+                            .unwrap_or(25565);
 
                         action = UiAction::ConnectServer {
                             host,
@@ -283,9 +288,8 @@ impl CasxUiApp {
         action
     }
 
-    /// Ve cac Widget HUD Lunar Client tren man hinh
+    /// Renders in-game HUD widgets.
     fn render_in_game_hud(&self, ctx: &egui::Context, fps: f64, ping_ms: u32) {
-        // 1. FPS & Ping Widget (Goc tren ben trai)
         if self.fps_ping_enabled {
             egui::Area::new(egui::Id::new("hud_fps_ping"))
                 .fixed_pos(Pos2::new(12.0, 12.0))
@@ -293,7 +297,10 @@ impl CasxUiApp {
                     let frame = egui::Frame::none()
                         .fill(Color32::from_rgba_premultiplied(0, 0, 0, 150))
                         .rounding(Rounding::same(4.0))
-                        .stroke(Stroke::new(1.0f32, Color32::from_rgba_premultiplied(255, 255, 255, 40)))
+                        .stroke(Stroke::new(
+                            1.0f32,
+                            Color32::from_rgba_premultiplied(255, 255, 255, 40),
+                        ))
                         .inner_margin(6.0);
 
                     frame.show(ui, |ui| {
@@ -307,7 +314,6 @@ impl CasxUiApp {
                 });
         }
 
-        // 2. Keystrokes Widget (Goc giua ben trai)
         if self.keystrokes_enabled {
             egui::Area::new(egui::Id::new("hud_keystrokes"))
                 .fixed_pos(Pos2::new(12.0, 50.0))
@@ -332,7 +338,7 @@ impl CasxUiApp {
         }
     }
 
-    /// Ve thanh Hotbar 9 o o day man hinh
+    /// Renders 9-slot hotbar at the bottom of the screen.
     fn render_hotbar(&mut self, ctx: &egui::Context) -> Option<UiAction> {
         let mut clicked_slot = None;
 
@@ -352,15 +358,23 @@ impl CasxUiApp {
 
                             let frame = egui::Frame::none()
                                 .fill(Color32::from_rgba_premultiplied(20, 20, 20, 200))
-                                .stroke(Stroke::new(if is_selected { 2.0_f32 } else { 1.0_f32 }, border_col))
+                                .stroke(Stroke::new(
+                                    if is_selected { 2.0_f32 } else { 1.0_f32 },
+                                    border_col,
+                                ))
                                 .rounding(Rounding::same(4.0))
                                 .inner_margin(4.0);
 
                             frame.show(ui, |ui| {
                                 ui.set_min_size(Vec2::new(42.0, 42.0));
                                 if let Some(slot) = &self.hotbar_slots[slot_idx] {
-                                    let btn_txt = format!("{}\nx{}", slot.display_name.chars().next().unwrap_or('?'), slot.count);
-                                    if ui.button(egui::RichText::new(btn_txt).size(11.0)).clicked() {
+                                    let btn_txt = format!(
+                                        "{}\nx{}",
+                                        slot.display_name.chars().next().unwrap_or('?'),
+                                        slot.count
+                                    );
+                                    if ui.button(egui::RichText::new(btn_txt).size(11.0)).clicked()
+                                    {
                                         clicked_slot = Some(slot_idx);
                                     }
                                 } else {
@@ -382,7 +396,7 @@ impl CasxUiApp {
         }
     }
 
-    /// Ve khung Chat o goc duoi ben trai man hinh
+    /// Renders chat panel in the bottom-left of the viewport.
     fn render_chat_panel(&mut self, ctx: &egui::Context) -> Option<UiAction> {
         let mut send_action = None;
 
@@ -396,7 +410,6 @@ impl CasxUiApp {
 
                 frame.show(ui, |ui| {
                     ui.set_width(340.0);
-                    // Hien thi toi da 6 tin nhan gan nhat
                     let start_idx = self.chat_messages.len().saturating_sub(6);
                     for msg in &self.chat_messages[start_idx..] {
                         ui.label(egui::RichText::new(msg).size(13.0).color(Color32::WHITE));
@@ -405,14 +418,15 @@ impl CasxUiApp {
                     if self.is_chat_open {
                         ui.separator();
                         let response = ui.text_edit_singleline(&mut self.chat_input);
-                        if response.lost_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            if !self.chat_input.trim().is_empty() {
-                                let msg = self.chat_input.clone();
-                                self.chat_messages.push(format!("[Ban] {}", msg));
-                                self.chat_input.clear();
-                                self.is_chat_open = false;
-                                send_action = Some(UiAction::SendChatMessage(msg));
-                            }
+                        if response.lost_focus()
+                            && ctx.input(|i| i.key_pressed(egui::Key::Enter))
+                            && !self.chat_input.trim().is_empty()
+                        {
+                            let msg = self.chat_input.clone();
+                            self.chat_messages.push(format!("[You] {}", msg));
+                            self.chat_input.clear();
+                            self.is_chat_open = false;
+                            send_action = Some(UiAction::SendChatMessage(msg));
                         }
                     }
                 });
@@ -421,7 +435,7 @@ impl CasxUiApp {
         send_action
     }
 
-    /// Ve bang diem Scoreboard o mep phai man hinh
+    /// Renders scoreboard on the right side of the screen.
     fn render_scoreboard(&self, ctx: &egui::Context) {
         egui::Area::new(egui::Id::new("hud_scoreboard"))
             .fixed_pos(Pos2::new(650.0, 100.0))
@@ -444,16 +458,23 @@ impl CasxUiApp {
                     for (name, score) in &self.scoreboard_lines {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(name).size(12.0).color(Color32::WHITE));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(egui::RichText::new(format!("{}", score)).size(12.0).color(Color32::RED));
-                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("{}", score))
+                                            .size(12.0)
+                                            .color(Color32::RED),
+                                    );
+                                },
+                            );
                         });
                     }
                 });
             });
     }
 
-    /// Ve danh sach nguoi choi Tab List o tren giua man hinh
+    /// Renders player tab list overlay in top center.
     fn render_tab_list(&self, ctx: &egui::Context) {
         egui::Area::new(egui::Id::new("hud_tab_list"))
             .anchor(Align2::CENTER_TOP, Vec2::new(0.0, 40.0))
@@ -461,24 +482,34 @@ impl CasxUiApp {
                 let frame = egui::Frame::none()
                     .fill(Color32::from_rgba_premultiplied(10, 10, 15, 220))
                     .rounding(Rounding::same(6.0))
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 60)))
+                    .stroke(Stroke::new(
+                        1.0_f32,
+                        Color32::from_rgba_premultiplied(255, 255, 255, 60),
+                    ))
                     .inner_margin(12.0);
 
                 frame.show(ui, |ui| {
                     ui.set_min_width(280.0);
-                    ui.heading("DANH SACH NGUOI CHOI");
+                    ui.heading("ONLINE PLAYERS");
                     ui.separator();
 
                     for (name, ping) in &self.tab_list_players {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(name).strong().color(Color32::WHITE));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("{} ms", ping))
-                                        .size(12.0)
-                                        .color(if *ping < 50 { Color32::GREEN } else { Color32::YELLOW }),
-                                );
-                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("{} ms", ping))
+                                            .size(12.0)
+                                            .color(if *ping < 50 {
+                                                Color32::GREEN
+                                            } else {
+                                                Color32::YELLOW
+                                            }),
+                                    );
+                                },
+                            );
                         });
                     }
                 });
@@ -487,9 +518,17 @@ impl CasxUiApp {
 
     fn render_key_box(ui: &mut egui::Ui, text: &str, active: bool, w: f32, h: f32) {
         let (fill, stroke_col, text_col) = if active {
-            (Color32::from_rgba_premultiplied(255, 255, 255, 180), Color32::WHITE, Color32::BLACK)
+            (
+                Color32::from_rgba_premultiplied(255, 255, 255, 180),
+                Color32::WHITE,
+                Color32::BLACK,
+            )
         } else {
-            (Color32::from_rgba_premultiplied(0, 0, 0, 120), Color32::from_rgba_premultiplied(255, 255, 255, 50), Color32::WHITE)
+            (
+                Color32::from_rgba_premultiplied(0, 0, 0, 120),
+                Color32::from_rgba_premultiplied(255, 255, 255, 50),
+                Color32::WHITE,
+            )
         };
 
         let frame = egui::Frame::none()
@@ -500,29 +539,34 @@ impl CasxUiApp {
         frame.show(ui, |ui| {
             ui.set_min_size(Vec2::new(w, h));
             ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new(text).size(13.0).strong().color(text_col));
+                ui.label(
+                    egui::RichText::new(text)
+                        .size(13.0)
+                        .strong()
+                        .color(text_col),
+                );
             });
         });
     }
 
-    /// Ve Bang cai dat Mod (Right Shift Mod Settings)
+    /// Renders settings overlay (Right Shift).
     fn render_mod_settings(&mut self, ctx: &egui::Context) {
-        egui::Window::new("Lunar Mod Settings (Right Shift)")
+        egui::Window::new("Client Settings (Right Shift)")
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
             .resizable(false)
             .collapsible(false)
             .min_width(320.0)
             .show(ctx, |ui| {
-                ui.heading("Cai Dat Native Rust Mods");
+                ui.heading("Native Client Settings");
                 ui.add_space(8.0);
 
-                ui.checkbox(&mut self.fps_ping_enabled, "Hien thi FPS & Ping");
-                ui.checkbox(&mut self.keystrokes_enabled, "Hien thi Keystrokes (WASD)");
-                ui.checkbox(&mut self.cps_counter_enabled, "Hien thi LMB / RMB CPS");
-                ui.checkbox(&mut self.scoreboard_enabled, "Hien thi Scoreboard");
+                ui.checkbox(&mut self.fps_ping_enabled, "Show FPS & Ping");
+                ui.checkbox(&mut self.keystrokes_enabled, "Show Keystrokes (WASD)");
+                ui.checkbox(&mut self.cps_counter_enabled, "Show LMB / RMB CPS");
+                ui.checkbox(&mut self.scoreboard_enabled, "Show Scoreboard");
 
                 ui.add_space(12.0);
-                if ui.button("Dong Cai Dat").clicked() {
+                if ui.button("Close Settings").clicked() {
                     self.screen_mode = ScreenMode::InGame;
                 }
             });
@@ -540,15 +584,16 @@ mod tests {
         assert_eq!(app.selected_version, GameVersion::V1_12_2);
         assert_eq!(app.selected_hotbar_slot, 0);
 
-        // Kiem tra chuyen doi phien ban
         app.selected_version = GameVersion::V26_2;
         assert_eq!(app.selected_version, GameVersion::V26_2);
     }
 
     #[test]
     fn test_hotbar_slot_selection_and_chat_messaging() {
-        let mut app = CasxUiApp::default();
-        app.selected_hotbar_slot = 3;
+        let mut app = CasxUiApp {
+            selected_hotbar_slot: 3,
+            ..Default::default()
+        };
         assert_eq!(app.selected_hotbar_slot, 3);
 
         app.chat_messages.push("Hello from unit test".to_string());

@@ -1,10 +1,10 @@
-//! Thuat toan Greedy Meshing 6 huong ket hop Voxel Ambient Occlusion da luong bang Rayon.
+//! 6-face greedy meshing algorithm with voxel Ambient Occlusion multithreaded via Rayon.
 
 use crate::vertex::PackedVertex;
 use casx_core::world::{CanonicalBlockState, ChunkSection};
 use rayon::prelude::*;
 
-/// Du lieu luoi da giac (Mesh) cua mot Chunk Section san sang nap len VRAM
+/// Mesh data for a single chunk section ready for VRAM upload.
 #[derive(Debug, Clone, Default)]
 pub struct SectionMesh {
     pub vertices: Vec<PackedVertex>,
@@ -21,10 +21,10 @@ impl SectionMesh {
     }
 }
 
-/// Tinh toan Ambient Occlusion (0..3) cho mot goc cua khoi dua tren 3 khoi tiep giap
+/// Computes Ambient Occlusion (0..3) for a block corner given 3 neighbor blocks.
 ///
-/// Cong thuc:
-/// $$\text{AO}(s_1, s_2, c) = \begin{cases} 0 & \text{neu } s_1 \text{ va } s_2 \text{ deu dac} \\ 3 - (s_1 + s_2 + c) & \text{truong hop con lai} \end{cases}$$
+/// Formula:
+/// $$\text{AO}(s_1, s_2, c) = \begin{cases} 0 & \text{if } s_1 \text{ and } s_2 \text{ are solid} \\ 3 - (s_1 + s_2 + c) & \text{otherwise} \end{cases}$$
 #[inline(always)]
 pub fn compute_ao(side1: bool, side2: bool, corner: bool) -> u32 {
     if side1 && side2 {
@@ -34,11 +34,11 @@ pub fn compute_ao(side1: bool, side2: bool, corner: bool) -> u32 {
     }
 }
 
-/// Bo tao luoi Voxel 6 huong da luong cho toan bo Section
+/// 6-Face Greedy Mesher for chunk sections
 pub struct GreedyMesher;
 
 impl GreedyMesher {
-    /// Tao luoi Section bang thuat toan Greedy Meshing
+    /// Generates section mesh using Greedy Meshing algorithm
     pub fn mesh_section(section: &ChunkSection) -> SectionMesh {
         if section.non_air_count == 0 {
             return SectionMesh::default();
@@ -47,7 +47,7 @@ impl GreedyMesher {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
-        // Quet ca 6 huong: 0=Bottom, 1=Top, 2=North, 3=South, 4=West, 5=East
+        // Scan all 6 face directions: 0=Bottom, 1=Top, 2=North, 3=South, 4=West, 5=East
         for face_idx in 0..6 {
             Self::mesh_face_direction(section, face_idx, &mut vertices, &mut indices);
         }
@@ -55,20 +55,17 @@ impl GreedyMesher {
         SectionMesh { vertices, indices }
     }
 
-    /// Tao luoi cho mot huong mat cu the
+    /// Generates quads for a specific face direction
     fn mesh_face_direction(
         section: &ChunkSection,
         face_idx: u32,
         vertices: &mut Vec<PackedVertex>,
         indices: &mut Vec<u32>,
     ) {
-        // Mat phang 2D 16x16 cho tung lat cat
-        // mask luu ID khoi (0 neu khong can ve mat)
+        // 2D 16x16 mask per slice (stores block ID, 0 if culled)
         let mut mask = [0u16; 256];
 
-        // Xac dinh truc chieu doc (d) va hai truc phang (u, v) tuy thuoc vao face_idx
         for d in 0..16 {
-            // 1. Dien du lieu mask cho lat cat hien tai
             let mut n = 0;
             for v in 0..16 {
                 for u in 0..16 {
@@ -76,7 +73,7 @@ impl GreedyMesher {
                     let current = section.get_block(x, y, z);
 
                     if current.is_solid() {
-                        // Kiem tra khoi lang gieng theo huong phap tuyen
+                        // Check neighbor in normal direction
                         let (nx, ny, nz) = Self::neighbor_coords(face_idx, x, y, z);
                         let neighbor = if nx < 16 && ny < 16 && nz < 16 {
                             section.get_block(nx, ny, nz)
@@ -96,20 +93,20 @@ impl GreedyMesher {
                 }
             }
 
-            // 2. Thuat toan Greedy Quadding tren mang 2D 16x16
+            // 2. Greedy quadding algorithm across 2D 16x16 slice
             n = 0;
             for j in 0..16 {
                 let mut i = 0;
                 while i < 16 {
                     let block_id = mask[n + i];
                     if block_id != 0 {
-                        // Tim chieu rong quad theo truc U
+                        // Find quad width along U axis
                         let mut w = 1;
                         while i + w < 16 && mask[n + i + w] == block_id {
                             w += 1;
                         }
 
-                        // Tim chieu cao quad theo truc V
+                        // Find quad height along V axis
                         let mut h = 1;
                         'outer: while j + h < 16 {
                             for k in 0..w {
@@ -120,19 +117,25 @@ impl GreedyMesher {
                             h += 1;
                         }
 
-                        // Xoa cac o da duoc gop trong mask
+                        // Clear merged entries in mask
                         for row in 0..h {
                             for col in 0..w {
                                 mask[n + col + row * 16 + i] = 0;
                             }
                         }
 
-                        // 3. Them quad vao bo dem dinh va chi so
+                        // 3. Append quad into vertex and index buffers
                         let base_vertex = vertices.len() as u32;
                         let (qx, qy, qz) = Self::map_coords(face_idx, d, i, j);
 
                         let quad_verts = Self::generate_quad_vertices(
-                            face_idx, qx as u32, qy as u32, qz as u32, w as u32, h as u32, block_id as u32,
+                            face_idx,
+                            qx as u32,
+                            qy as u32,
+                            qz as u32,
+                            w as u32,
+                            h as u32,
+                            block_id as u32,
                         );
                         vertices.extend_from_slice(&quad_verts);
 
@@ -194,66 +197,330 @@ impl GreedyMesher {
             1 => {
                 // Top (+Y)
                 [
-                    PackedVertex::new(x, y + 1, z, face_idx, ao, 0, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y + 1, z + h, face_idx, ao, 0, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + w, y + 1, z + h, face_idx, ao, w, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + w, y + 1, z, face_idx, ao, w, 0, block_light, tex_layer, sky_light),
+                    PackedVertex::new(
+                        x,
+                        y + 1,
+                        z,
+                        face_idx,
+                        ao,
+                        0,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y + 1,
+                        z + h,
+                        face_idx,
+                        ao,
+                        0,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + w,
+                        y + 1,
+                        z + h,
+                        face_idx,
+                        ao,
+                        w,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + w,
+                        y + 1,
+                        z,
+                        face_idx,
+                        ao,
+                        w,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
                 ]
             }
             0 => {
                 // Bottom (-Y)
                 [
-                    PackedVertex::new(x, y, z, face_idx, ao, 0, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + w, y, z, face_idx, ao, w, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + w, y, z + h, face_idx, ao, w, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y, z + h, face_idx, ao, 0, h, block_light, tex_layer, sky_light),
+                    PackedVertex::new(
+                        x,
+                        y,
+                        z,
+                        face_idx,
+                        ao,
+                        0,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + w,
+                        y,
+                        z,
+                        face_idx,
+                        ao,
+                        w,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + w,
+                        y,
+                        z + h,
+                        face_idx,
+                        ao,
+                        w,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y,
+                        z + h,
+                        face_idx,
+                        ao,
+                        0,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
                 ]
             }
             2 => {
                 // North (-Z)
                 [
-                    PackedVertex::new(x + w, y, z, face_idx, ao, w, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y, z, face_idx, ao, 0, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y + h, z, face_idx, ao, 0, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + w, y + h, z, face_idx, ao, w, h, block_light, tex_layer, sky_light),
+                    PackedVertex::new(
+                        x + w,
+                        y,
+                        z,
+                        face_idx,
+                        ao,
+                        w,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y,
+                        z,
+                        face_idx,
+                        ao,
+                        0,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y + h,
+                        z,
+                        face_idx,
+                        ao,
+                        0,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + w,
+                        y + h,
+                        z,
+                        face_idx,
+                        ao,
+                        w,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
                 ]
             }
             3 => {
                 // South (+Z)
                 [
-                    PackedVertex::new(x, y, z + 1, face_idx, ao, 0, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + w, y, z + 1, face_idx, ao, w, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + w, y + h, z + 1, face_idx, ao, w, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y + h, z + 1, face_idx, ao, 0, h, block_light, tex_layer, sky_light),
+                    PackedVertex::new(
+                        x,
+                        y,
+                        z + 1,
+                        face_idx,
+                        ao,
+                        0,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + w,
+                        y,
+                        z + 1,
+                        face_idx,
+                        ao,
+                        w,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + w,
+                        y + h,
+                        z + 1,
+                        face_idx,
+                        ao,
+                        w,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y + h,
+                        z + 1,
+                        face_idx,
+                        ao,
+                        0,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
                 ]
             }
             4 => {
                 // West (-X)
                 [
-                    PackedVertex::new(x, y, z, face_idx, ao, 0, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y, z + h, face_idx, ao, 0, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y + w, z + h, face_idx, ao, w, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x, y + w, z, face_idx, ao, w, 0, block_light, tex_layer, sky_light),
+                    PackedVertex::new(
+                        x,
+                        y,
+                        z,
+                        face_idx,
+                        ao,
+                        0,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y,
+                        z + h,
+                        face_idx,
+                        ao,
+                        0,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y + w,
+                        z + h,
+                        face_idx,
+                        ao,
+                        w,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x,
+                        y + w,
+                        z,
+                        face_idx,
+                        ao,
+                        w,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
                 ]
             }
             _ => {
                 // East (+X)
                 [
-                    PackedVertex::new(x + 1, y, z + h, face_idx, ao, 0, h, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + 1, y, z, face_idx, ao, 0, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + 1, y + w, z, face_idx, ao, w, 0, block_light, tex_layer, sky_light),
-                    PackedVertex::new(x + 1, y + w, z + h, face_idx, ao, w, h, block_light, tex_layer, sky_light),
+                    PackedVertex::new(
+                        x + 1,
+                        y,
+                        z + h,
+                        face_idx,
+                        ao,
+                        0,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + 1,
+                        y,
+                        z,
+                        face_idx,
+                        ao,
+                        0,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + 1,
+                        y + w,
+                        z,
+                        face_idx,
+                        ao,
+                        w,
+                        0,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
+                    PackedVertex::new(
+                        x + 1,
+                        y + w,
+                        z + h,
+                        face_idx,
+                        ao,
+                        w,
+                        h,
+                        block_light,
+                        tex_layer,
+                        sky_light,
+                    ),
                 ]
             }
         }
     }
 
-    /// Tao luoi song song cho toan bo danh sach cac Section bang Rayon threadpool
+    /// Meshes sections in parallel using Rayon threadpool
     pub fn mesh_sections_parallel(sections: &[ChunkSection]) -> Vec<SectionMesh> {
         sections.par_iter().map(Self::mesh_section).collect()
     }
 
-    /// Tao luoi truc tiep tu WorldStorage cua 1.12.2 va TextureAtlas
+    /// Meshes chunk section directly from 1.12.2 WorldStorage and TextureAtlas
     pub fn mesh_world_section(
         world: &casx_world::WorldStorage,
         chunk_x: i32,
@@ -276,12 +543,13 @@ impl GreedyMesher {
                     let wz = base_z + lz;
 
                     let state = world.get_block_state(wx, wy, wz);
-                    let (block_id, meta) = casx_core::palette::SectionPaletteV340::unpack_block_id_meta(state);
+                    let (block_id, meta) =
+                        casx_core::palette::SectionPaletteV340::unpack_block_id_meta(state);
                     if block_id == 0 {
                         continue;
                     }
 
-                    // Kiem tra 6 mat: 0=Bottom, 1=Top, 2=North, 3=South, 4=West, 5=East
+                    // Check 6 adjacent faces: 0=Bottom, 1=Top, 2=North, 3=South, 4=West, 5=East
                     let neighbors = [
                         (0u32, wx, wy - 1, wz),
                         (1u32, wx, wy + 1, wz),
@@ -293,19 +561,15 @@ impl GreedyMesher {
 
                     for &(face_idx, nx, ny, nz) in &neighbors {
                         let n_state = world.get_block_state(nx, ny, nz);
-                        let (n_id, _) = casx_core::palette::SectionPaletteV340::unpack_block_id_meta(n_state);
+                        let (n_id, _) =
+                            casx_core::palette::SectionPaletteV340::unpack_block_id_meta(n_state);
 
                         if casx_assets::TextureAtlas::is_transparent(n_id) {
-                            let tex_id = atlas.get_block_texture_id(block_id, meta, face_idx as u8) as u32;
+                            let tex_id =
+                                atlas.get_block_texture_id(block_id, meta, face_idx as u8) as u32;
                             let base_idx = vertices.len() as u32;
                             let quad_verts = Self::generate_quad_vertices(
-                                face_idx,
-                                lx as u32,
-                                ly as u32,
-                                lz as u32,
-                                1,
-                                1,
-                                tex_id,
+                                face_idx, lx as u32, ly as u32, lz as u32, 1, 1, tex_id,
                             );
 
                             vertices.extend_from_slice(&quad_verts);
@@ -336,7 +600,7 @@ mod tests {
         let mut section = ChunkSection::default();
         let stone = CanonicalBlockState::new(1, 0);
 
-        // Dat mot san da phang 16x16 tai day Section (Y=0)
+        // Place flat 16x16 stone platform at section floor (Y=0)
         for x in 0..16 {
             for z in 0..16 {
                 section.set_block(x, 0, z, stone);
@@ -345,40 +609,41 @@ mod tests {
 
         let mesh = GreedyMesher::mesh_section(&section);
 
-        // Mat Top cua san da phang 16x16 phai duoc gop lai thanh dung 1 quad duy nhat (thay vi 256 quads rieng le!)
-        // Tong so mat: mat Top (1 quad) + mat Bottom (1 quad) + 4 mat bien (16 quads)
-        assert!(mesh.quad_count() < 30, "Greedy Meshing phai giam manh so luong da giac: {}", mesh.quad_count());
+        // Top face of 16x16 stone platform must merge into a single quad (instead of 256 individual quads)
+        // Total faces: Top (1 quad) + Bottom (1 quad) + 4 border faces (16 quads)
+        assert!(
+            mesh.quad_count() < 30,
+            "Greedy Meshing should reduce polygon count: {}",
+            mesh.quad_count()
+        );
         assert_eq!(mesh.indices.len(), mesh.quad_count() * 6);
     }
 
     #[test]
     fn test_mesh_world_section_face_culling() {
-        use casx_world::region::{ChunkColumnV340, ChunkSectionV340};
-        use casx_core::palette::SectionPaletteV340;
         use casx_assets::TextureAtlas;
+        use casx_core::palette::SectionPaletteV340;
+        use casx_world::region::{ChunkColumnV340, ChunkSectionV340};
 
         let mut world = casx_world::WorldStorage::new();
         let atlas = TextureAtlas::new(512, 512, 16);
 
-        // Dat 2 khoi da ke nhau tai (0, 64, 0) va (1, 64, 0)
+        // Place 2 adjacent stone blocks at (0, 64, 0) and (1, 64, 0)
         let mut data = vec![0u64; 256];
-        data[0] |= 1u64; // (0, 0, 0) trong section 4
-        data[0] |= 1u64 << 4; // (1, 0, 0) trong section 4
-        let palette = vec![0, 16]; // stone
+        data[0] |= 1u64;
+        data[0] |= 1u64 << 4;
+        let palette = vec![0, 16];
         let section = SectionPaletteV340::from_packet_data(4, Some(palette), data).unwrap();
         let mut col = ChunkColumnV340::new(0, 0);
-        col.sections.insert(4, ChunkSectionV340::new_v340(
+        col.sections.insert(
             4,
-            section,
-            vec![15; 2048],
-            None,
-        ));
+            ChunkSectionV340::new_v340(4, section, vec![15; 2048], None),
+        );
         world.chunks.insert((0, 0), col);
 
         let mesh = GreedyMesher::mesh_world_section(&world, 0, 0, 4, &atlas);
-        // Moi khoi doc lap co 6 mat -> 2 khoi = 12 mat.
-        // Vi 2 khoi cham nhau tai mat West/East -> phai bi culled mat cham do!
-        // So mat con lai phai la 10 mat = 10 quads.
+        // Each isolated block has 6 faces (2 blocks = 12 faces).
+        // Facing West/East faces are shared and must be culled -> 10 quads remaining.
         assert_eq!(mesh.quad_count(), 10);
     }
 }

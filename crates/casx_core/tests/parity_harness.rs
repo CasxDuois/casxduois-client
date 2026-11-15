@@ -1,12 +1,16 @@
-//! Bo kiem thu doi chieu vi sai (Differential Parity Harness) cho casx_core.
+//! Differential Parity Harness tests for casx_core.
 
-use casx_core::chat_parser::{parse_json_text_component, parse_legacy_section_text, StyledTextSpan};
+use bytes::BytesMut;
+use casx_core::chat_parser::{
+    parse_json_text_component, parse_legacy_section_text, StyledTextSpan,
+};
 use casx_core::codec::{
     decode_block_pos_1_12_2, decode_block_pos_26_2, encode_block_pos_1_12_2, encode_block_pos_26_2,
 };
 use casx_core::crypto::{format_uuid, generate_offline_uuid, mojang_server_hash};
-use casx_core::nbt::{read_classic_nbt, read_nameless_nbt, write_classic_nbt, write_nameless_nbt, NbtTag};
-use bytes::BytesMut;
+use casx_core::nbt::{
+    read_classic_nbt, read_nameless_nbt, write_classic_nbt, write_nameless_nbt, NbtTag,
+};
 use std::collections::HashMap;
 
 #[test]
@@ -50,42 +54,51 @@ fn test_parity_mojang_server_hash_twos_complement() {
 #[test]
 fn test_parity_classic_and_nameless_nbt() {
     let mut compound = HashMap::new();
-    compound.insert("ServerBrand".to_string(), NbtTag::String("CasxDuois-Engine".to_string()));
+    compound.insert(
+        "ServerBrand".to_string(),
+        NbtTag::String("CasxDuois-Engine".to_string()),
+    );
     compound.insert("ViewDistance".to_string(), NbtTag::Int(16));
     compound.insert("SimulationDistance".to_string(), NbtTag::Int(10));
     compound.insert("ReducedDebugInfo".to_string(), NbtTag::Byte(0));
 
     let root = NbtTag::Compound(compound);
 
-    // Kiem tra Classic NBT (1.12.2)
+    // Test Classic NBT (1.12.2)
     let mut buf_classic = BytesMut::new();
-    write_classic_nbt(&mut buf_classic, "", &root).expect("Ghi Classic NBT");
+    write_classic_nbt(&mut buf_classic, "", &root).expect("Write Classic NBT");
     let mut reader_classic = buf_classic.freeze();
-    let (_, decoded_classic) = read_classic_nbt(&mut reader_classic).expect("Doc Classic NBT");
-    assert_eq!(decoded_classic.get_str("ServerBrand"), Some("CasxDuois-Engine"));
+    let (_, decoded_classic) = read_classic_nbt(&mut reader_classic).expect("Read Classic NBT");
+    assert_eq!(
+        decoded_classic.get_str("ServerBrand"),
+        Some("CasxDuois-Engine")
+    );
     assert_eq!(decoded_classic.get_int("ViewDistance"), Some(16));
 
-    // Kiem tra Nameless NBT (26.2)
+    // Test Nameless NBT (26.2)
     let mut buf_nameless = BytesMut::new();
-    write_nameless_nbt(&mut buf_nameless, &root).expect("Ghi Nameless NBT");
+    write_nameless_nbt(&mut buf_nameless, &root).expect("Write Nameless NBT");
     let mut reader_nameless = buf_nameless.freeze();
-    let decoded_nameless = read_nameless_nbt(&mut reader_nameless).expect("Doc Nameless NBT");
-    assert_eq!(decoded_nameless.get_str("ServerBrand"), Some("CasxDuois-Engine"));
+    let decoded_nameless = read_nameless_nbt(&mut reader_nameless).expect("Read Nameless NBT");
+    assert_eq!(
+        decoded_nameless.get_str("ServerBrand"),
+        Some("CasxDuois-Engine")
+    );
     assert_eq!(decoded_nameless.get_int("SimulationDistance"), Some(10));
 }
 
 #[test]
 fn test_parity_chat_formatting_pipeline() {
-    let raw_legacy = "§6[Server] §aChao mung §fTester §#00AAFFda ket noi!";
+    let raw_legacy = "§6[Server] §aWelcome §fTester §#00AAFFconnected!";
     let spans = parse_legacy_section_text(raw_legacy, StyledTextSpan::default());
     assert_eq!(spans.len(), 4);
     assert_eq!(spans[0].text, "[Server] ");
     assert_eq!(spans[0].color, [255, 170, 0]); // gold
-    assert_eq!(spans[1].text, "Chao mung ");
+    assert_eq!(spans[1].text, "Welcome ");
     assert_eq!(spans[1].color, [85, 255, 85]); // green
     assert_eq!(spans[2].text, "Tester ");
     assert_eq!(spans[2].color, [255, 255, 255]); // white
-    assert_eq!(spans[3].text, "da ket noi!");
+    assert_eq!(spans[3].text, "connected!");
     assert_eq!(spans[3].color, [0, 170, 255]); // hex #00AAFF
 
     let raw_json = r##"{"text":"CasxDuois","color":"#FF0055","bold":true}"##;
@@ -110,12 +123,12 @@ fn test_parity_freefall_gravity_20_tps() {
     physics.curr_pos = DVec3::new(0.0, 100.0, 0.0);
     physics.prev_pos = physics.curr_pos;
 
-    // Mo phong 10 ticks roi tu do khong co vat can
+    // Simulate 10 freefall ticks without obstacles
     for _ in 0..10 {
         physics.step_physics_tick(&world, 0.0, 0.0, false);
     }
 
-    // Kiem tra van toc va vi tri theo cong thuc v_y = (v_y - 0.08) * 0.98
+    // Verify velocity and position with formula v_y = (v_y - 0.08) * 0.98
     assert!(physics.curr_pos.y < 96.5 && physics.curr_pos.y > 95.5);
     assert!(!physics.on_ground);
 }
@@ -133,8 +146,10 @@ fn test_parity_ground_landing_and_collision() {
     }
     world.insert_chunk(chunk);
 
-    let mut physics = LocalPlayerPhysics::default();
-    physics.curr_pos = DVec3::new(8.0, 63.0, 8.0);
+    let mut physics = LocalPlayerPhysics {
+        curr_pos: DVec3::new(8.0, 63.0, 8.0),
+        ..Default::default()
+    };
 
     for _ in 0..20 {
         physics.step_physics_tick(&world, 0.0, 0.0, false);
@@ -152,25 +167,24 @@ fn test_parity_3d_dda_raycast_voxel_faces() {
     chunk.set_block(5, 64, 5, stone);
     world.insert_chunk(chunk);
 
-    // 1. Nhin tu phia Tay sang Dong (X+): phai cham vao mat West cua khoi
+    // 1. Look from West to East (X+): must hit the West face of block
     let origin_west = DVec3::new(2.0, 64.5, 5.5);
-    let hit_west = raycast_block(&world, origin_west, DVec3::new(1.0, 0.0, 0.0), 5.0).expect("Hit West");
+    let hit_west =
+        raycast_block(&world, origin_west, DVec3::new(1.0, 0.0, 0.0), 5.0).expect("Hit West");
     assert_eq!(hit_west.block_pos, IVec3::new(5, 64, 5));
     assert_eq!(hit_west.face, BlockFace::West);
 
-    // 2. Nhin tu tren xuong (Y-): phai cham vao mat Top cua khoi
+    // 2. Look from above (Y-): must hit the Top face of block
     let origin_top = DVec3::new(5.5, 68.0, 5.5);
-    let hit_top = raycast_block(&world, origin_top, DVec3::new(0.0, -1.0, 0.0), 5.0).expect("Hit Top");
+    let hit_top =
+        raycast_block(&world, origin_top, DVec3::new(0.0, -1.0, 0.0), 5.0).expect("Hit Top");
     assert_eq!(hit_top.block_pos, IVec3::new(5, 64, 5));
     assert_eq!(hit_top.face, BlockFace::Top);
 }
 
 #[test]
 fn test_parity_ray_intersects_aabb_pvp_hitbox() {
-    let player_aabb = Aabb::new(
-        DVec3::new(9.7, 60.0, 9.7),
-        DVec3::new(10.3, 61.8, 10.3),
-    );
+    let player_aabb = Aabb::new(DVec3::new(9.7, 60.0, 9.7), DVec3::new(10.3, 61.8, 10.3));
 
     let eye_origin = DVec3::new(10.0, 61.5, 7.0);
     let attack_dir = DVec3::new(0.0, 0.0, 1.0);
@@ -205,7 +219,7 @@ fn test_parity_freelook_independent_angles() {
     freelook.free_yaw = 270.0;
     freelook.on_camera_update(&mut ctx);
     assert_eq!(*ctx.render_yaw, 270.0);
-    assert_eq!(ctx.server_yaw, 90.0); // Khong bi thay doi goc nhin gui len server
+    assert_eq!(ctx.server_yaw, 90.0); // Server view angle remains untouched
 }
 
 #[test]
@@ -230,7 +244,7 @@ use proto_26_2::Proto26_2;
 
 #[test]
 fn test_parity_hot_switch_protocol_adapters() {
-    // 1. Khoi tao Adapter 1.12.2
+    // 1. Initialize Adapter 1.12.2
     let mut adapter: Box<dyn ProtocolAdapter> = Box::new(Proto1_12_2::new());
     assert_eq!(adapter.version(), GameVersion::V1_12_2);
 
@@ -247,7 +261,7 @@ fn test_parity_hot_switch_protocol_adapters() {
         .expect("Encode 1.12.2 Handshake");
     assert!(!buf_112.is_empty());
 
-    // 2. Trao doi nong (Hot-Switch trong 0ms) sang Adapter 26.2
+    // 2. Hot-switch to Adapter 26.2
     adapter = Box::new(Proto26_2::new());
     assert_eq!(adapter.version(), GameVersion::V26_2);
 

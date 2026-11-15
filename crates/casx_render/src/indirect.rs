@@ -1,11 +1,8 @@
-//! Bo dem lenh ve gian tiep (Indirect Draw Buffer) va gom cum Draw Call da Section.
-//!
-//! Giup giam overhead tu hang tram Draw Call moi frame xuong mot lenh goi duy nhat:
-//! `multi_draw_indexed_indirect`.
+//! Indirect draw buffer manager and multi-section draw call batching.
 
 use bytemuck::{Pod, Zeroable};
 
-/// Cau truc lenh ve gián tiếp `DrawIndexedIndirectArgs` chuan GPU (20 bytes)
+/// Standard GPU `DrawIndexedIndirectArgs` layout (20 bytes).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 pub struct DrawIndexedIndirectArgs {
@@ -28,7 +25,7 @@ impl DrawIndexedIndirectArgs {
     }
 }
 
-/// Bo gom cum lenh ve gian tiep cho cac Section Chunk
+/// Indirect draw command batch collector for chunk sections
 #[derive(Debug, Default, Clone)]
 pub struct IndirectBatchManager {
     pub commands: Vec<DrawIndexedIndirectArgs>,
@@ -41,14 +38,14 @@ impl IndirectBatchManager {
         Self::default()
     }
 
-    /// Xoa sach bo dem truoc khi thu thap Section cho khung hinh moi
+    /// Clears the batch buffer before collecting sections for a new frame
     pub fn clear(&mut self) {
         self.commands.clear();
         self.total_indices = 0;
         self.total_quads = 0;
     }
 
-    /// Them mot Section vao lo ve gian tiep
+    /// Adds a chunk section into the indirect batch
     pub fn add_section(&mut self, quad_count: u32) {
         if quad_count == 0 {
             return;
@@ -68,12 +65,12 @@ impl IndirectBatchManager {
         self.total_quads += quad_count;
     }
 
-    /// Lay du lieu byte tho de nap truc tiep vao `wgpu::Buffer` voi `BufferUsages::INDIRECT`
+    /// Returns raw byte slice to upload directly to `wgpu::Buffer` with `BufferUsages::INDIRECT`
     pub fn as_bytes(&self) -> &[u8] {
         bytemuck::cast_slice(&self.commands)
     }
 
-    /// So luong lenh ve duoc gom
+    /// Total number of batched draw commands
     pub fn command_count(&self) -> usize {
         self.commands.len()
     }
@@ -92,24 +89,24 @@ mod tests {
         batch.add_section(10);
         // Section 2: 25 quads
         batch.add_section(25);
-        // Section 3 trong: 0 quads (phai bo qua)
+        // Section 3 empty: 0 quads (must skip)
         batch.add_section(0);
 
         assert_eq!(batch.command_count(), 2);
         assert_eq!(batch.total_quads, 35);
         assert_eq!(batch.total_indices, 35 * 6);
 
-        // Kiem tra lenh 1
+        // Verify command 1
         assert_eq!(batch.commands[0].index_count, 60);
         assert_eq!(batch.commands[0].first_index, 0);
         assert_eq!(batch.commands[0].base_vertex, 0);
 
-        // Kiem tra lenh 2
+        // Verify command 2
         assert_eq!(batch.commands[1].index_count, 150);
         assert_eq!(batch.commands[1].first_index, 60);
         assert_eq!(batch.commands[1].base_vertex, 40);
 
-        // Kiem tra kich thuoc mang byte nap xuong GPU
+        // Verify GPU upload buffer byte length
         let bytes = batch.as_bytes();
         assert_eq!(bytes.len(), 40); // 2 commands * 20 bytes
     }

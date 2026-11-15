@@ -1,10 +1,10 @@
 // crates/casx_sim/src/raycast.rs
-// Thuat toan do tia Voxel Amanatides & Woo Fast Voxel Traversal 3D DDA
+// Fast 3D DDA voxel traversal algorithm (Amanatides & Woo).
 
 use casx_core::jmath::{DVec3, IVec3};
 use casx_world::WorldStorage;
 
-/// Mat cua khoi Voxel bi tia cat qua
+/// Block face intersected by ray.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockFace {
     Bottom = 0,
@@ -28,7 +28,7 @@ impl BlockFace {
     }
 }
 
-/// Ket qua va cham tia voi khoi
+/// Raycast collision hit result.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VoxelHit {
     pub block_pos: IVec3,
@@ -38,7 +38,7 @@ pub struct VoxelHit {
     pub distance: f64,
 }
 
-/// Ban tia tu mat nhan vat voi ban kinh max_distance de tim khoi duoc chon
+/// Casts a ray from eye position up to max_distance to find targeted block.
 pub fn raycast_world(
     world: &WorldStorage,
     origin: DVec3,
@@ -53,7 +53,7 @@ pub fn raycast_world(
 
     let mut current_block = origin.floor_to_ivec3();
 
-    // Kiem tra neu diem bat dau da nam trong mot khoi dac
+    // Check if ray origin starts inside a solid block
     if world.is_solid_block(current_block.x, current_block.y, current_block.z) {
         return Some(VoxelHit {
             block_pos: current_block,
@@ -68,9 +68,21 @@ pub fn raycast_world(
     let step_y = if dir.y > 0.0 { 1 } else { -1 };
     let step_z = if dir.z > 0.0 { 1 } else { -1 };
 
-    let t_delta_x = if dir.x != 0.0 { (1.0 / dir.x).abs() } else { f64::INFINITY };
-    let t_delta_y = if dir.y != 0.0 { (1.0 / dir.y).abs() } else { f64::INFINITY };
-    let t_delta_z = if dir.z != 0.0 { (1.0 / dir.z).abs() } else { f64::INFINITY };
+    let t_delta_x = if dir.x != 0.0 {
+        (1.0 / dir.x).abs()
+    } else {
+        f64::INFINITY
+    };
+    let t_delta_y = if dir.y != 0.0 {
+        (1.0 / dir.y).abs()
+    } else {
+        f64::INFINITY
+    };
+    let t_delta_z = if dir.z != 0.0 {
+        (1.0 / dir.z).abs()
+    } else {
+        f64::INFINITY
+    };
 
     let mut t_max_x = if dir.x > 0.0 {
         ((current_block.x + 1) as f64 - origin.x) * t_delta_x
@@ -105,24 +117,40 @@ pub fn raycast_world(
                 current_block.x += step_x;
                 total_dist = t_max_x;
                 t_max_x += t_delta_x;
-                hit_face = if step_x > 0 { BlockFace::West } else { BlockFace::East };
+                hit_face = if step_x > 0 {
+                    BlockFace::West
+                } else {
+                    BlockFace::East
+                };
             } else {
                 current_block.z += step_z;
                 total_dist = t_max_z;
                 t_max_z += t_delta_z;
-                hit_face = if step_z > 0 { BlockFace::North } else { BlockFace::South };
+                hit_face = if step_z > 0 {
+                    BlockFace::North
+                } else {
+                    BlockFace::South
+                };
             }
         } else {
             if t_max_y < t_max_z {
                 current_block.y += step_y;
                 total_dist = t_max_y;
                 t_max_y += t_delta_y;
-                hit_face = if step_y > 0 { BlockFace::Bottom } else { BlockFace::Top };
+                hit_face = if step_y > 0 {
+                    BlockFace::Bottom
+                } else {
+                    BlockFace::Top
+                };
             } else {
                 current_block.z += step_z;
                 total_dist = t_max_z;
                 t_max_z += t_delta_z;
-                hit_face = if step_z > 0 { BlockFace::North } else { BlockFace::South };
+                hit_face = if step_z > 0 {
+                    BlockFace::North
+                } else {
+                    BlockFace::South
+                };
             }
         }
 
@@ -133,7 +161,11 @@ pub fn raycast_world(
         if world.is_solid_block(current_block.x, current_block.y, current_block.z) {
             let hit_point = origin + dir * total_dist;
             let norm = hit_face.normal();
-            let adjacent_pos = IVec3::new(current_block.x + norm.x, current_block.y + norm.y, current_block.z + norm.z);
+            let adjacent_pos = IVec3::new(
+                current_block.x + norm.x,
+                current_block.y + norm.y,
+                current_block.z + norm.z,
+            );
             return Some(VoxelHit {
                 block_pos: current_block,
                 face: hit_face,
@@ -150,34 +182,31 @@ pub fn raycast_world(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use casx_world::region::{ChunkColumnV340, ChunkSectionV340};
     use casx_core::palette::SectionPaletteV340;
+    use casx_world::region::{ChunkColumnV340, ChunkSectionV340};
 
     #[test]
     fn test_raycast_direct_hit_top_face() {
         let mut world = WorldStorage::new();
-        // Dat khoi da tai (0, 64, 0)
+        // Place stone block at (0, 64, 0)
         let mut data = vec![0u64; 256];
         data[0] |= 1u64;
         let palette = vec![0, 16];
         let section = SectionPaletteV340::from_packet_data(4, Some(palette), data).unwrap();
         let mut col = ChunkColumnV340::new(0, 0);
-        col.sections.insert(4, ChunkSectionV340::new_v340(
+        col.sections.insert(
             4,
-            section,
-            vec![15; 2048],
-            None,
-        ));
+            ChunkSectionV340::new_v340(4, section, vec![15; 2048], None),
+        );
         world.chunks.insert((0, 0), col);
 
-        // Ban tia tu (0.5, 66.0, 0.5) huong thang xuong duoi (0, -1, 0)
         let origin = DVec3::new(0.5, 66.0, 0.5);
         let direction = DVec3::new(0.0, -1.0, 0.0);
         let hit = raycast_world(&world, origin, direction, 5.0).unwrap();
 
         assert_eq!(hit.block_pos, IVec3::new(0, 64, 0));
         assert_eq!(hit.face, BlockFace::Top);
-        assert_eq!(hit.adjacent_pos, IVec3::new(0, 65, 0)); // Dat khoi tren dau khoi bi danh
-        assert!((hit.distance - 1.0).abs() < 1e-4); // 66.0 - 65.0 = 1.0m
+        assert_eq!(hit.adjacent_pos, IVec3::new(0, 65, 0));
+        assert!((hit.distance - 1.0).abs() < 1e-4);
     }
 }

@@ -1,9 +1,9 @@
-//! He thong vat ly nguoi choi 20 TPS (AABB Swept Collision, trong truong, ma sat, buoc nhay bac thang).
+//! Player 20 TPS physics simulation (AABB Swept Collision, gravity, friction, step-climbing).
 
 use crate::world::ClientWorldCache;
 use glam::{DVec3, IVec3};
 
-/// Hop bao truc song song (Axis-Aligned Bounding Box)
+/// Axis-Aligned Bounding Box (AABB)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Aabb {
     pub min: DVec3,
@@ -38,9 +38,13 @@ impl Aabb {
             && self.min.z < other.max.z
     }
 
-    /// Tinh toan do lech theo truc Y de tranh va cham voi hop bao khac
+    /// Calculates Y-axis offset to avoid collision with another AABB
     pub fn calculate_y_offset(&self, other: &Aabb, mut offset_y: f64) -> f64 {
-        if other.max.x > self.min.x && other.min.x < self.max.x && other.max.z > self.min.z && other.min.z < self.max.z {
+        if other.max.x > self.min.x
+            && other.min.x < self.max.x
+            && other.max.z > self.min.z
+            && other.min.z < self.max.z
+        {
             if offset_y > 0.0 && other.max.y <= self.min.y {
                 let d = self.min.y - other.max.y;
                 if d < offset_y {
@@ -56,9 +60,13 @@ impl Aabb {
         offset_y
     }
 
-    /// Tinh toan do lech theo truc X de tranh va cham
+    /// Calculates X-axis offset to avoid collision
     pub fn calculate_x_offset(&self, other: &Aabb, mut offset_x: f64) -> f64 {
-        if other.max.y > self.min.y && other.min.y < self.max.y && other.max.z > self.min.z && other.min.z < self.max.z {
+        if other.max.y > self.min.y
+            && other.min.y < self.max.y
+            && other.max.z > self.min.z
+            && other.min.z < self.max.z
+        {
             if offset_x > 0.0 && other.max.x <= self.min.x {
                 let d = self.min.x - other.max.x;
                 if d < offset_x {
@@ -74,9 +82,13 @@ impl Aabb {
         offset_x
     }
 
-    /// Tinh toan do lech theo truc Z de tranh va cham
+    /// Calculates Z-axis offset to avoid collision
     pub fn calculate_z_offset(&self, other: &Aabb, mut offset_z: f64) -> f64 {
-        if other.max.x > self.min.x && other.min.x < self.max.x && other.max.y > self.min.y && other.min.y < self.max.y {
+        if other.max.x > self.min.x
+            && other.min.x < self.max.x
+            && other.max.y > self.min.y
+            && other.min.y < self.max.y
+        {
             if offset_z > 0.0 && other.max.z <= self.min.z {
                 let d = self.min.z - other.max.z;
                 if d < offset_z {
@@ -93,7 +105,7 @@ impl Aabb {
     }
 }
 
-/// Bo dieu khien vat ly nguoi choi tai cho (20 TPS)
+/// Local player physics controller (20 TPS)
 #[derive(Debug, Clone)]
 pub struct LocalPlayerPhysics {
     pub curr_pos: DVec3,
@@ -118,22 +130,30 @@ impl Default for LocalPlayerPhysics {
             on_ground: false,
             is_sneaking: false,
             is_sprinting: false,
-            step_height: 0.6, // Chieu cao buoc len bac thang
+            step_height: 0.6, // Step-climbing height
         }
     }
 }
 
 impl LocalPlayerPhysics {
     pub fn bounding_box(&self) -> Aabb {
-        let half_w = 0.3; // Chieu rong nguoi choi 0.6m (ban kinh 0.3m)
+        let half_w = 0.3; // Player width 0.6m (radius 0.3m)
         let height = if self.is_sneaking { 1.5 } else { 1.8 };
         Aabb::new(
-            DVec3::new(self.curr_pos.x - half_w, self.curr_pos.y, self.curr_pos.z - half_w),
-            DVec3::new(self.curr_pos.x + half_w, self.curr_pos.y + height, self.curr_pos.z + half_w),
+            DVec3::new(
+                self.curr_pos.x - half_w,
+                self.curr_pos.y,
+                self.curr_pos.z - half_w,
+            ),
+            DVec3::new(
+                self.curr_pos.x + half_w,
+                self.curr_pos.y + height,
+                self.curr_pos.z + half_w,
+            ),
         )
     }
 
-    /// Lay danh sach hop bao cua cac khoi dac xung quanh nguoi choi
+    /// Collects bounding boxes of solid blocks surrounding the entity.
     fn get_surrounding_boxes(&self, world: &ClientWorldCache, box_area: &Aabb) -> Vec<Aabb> {
         let min_x = box_area.min.x.floor() as i32;
         let max_x = box_area.max.x.ceil() as i32;
@@ -156,7 +176,7 @@ impl LocalPlayerPhysics {
         boxes
     }
 
-    /// Thuc thi mot tick vat ly $20\text{ TPS}$ ($\Delta t = 50\text{ ms}$)
+    /// Executes a 20 TPS physics simulation tick ($\Delta t = 50\text{ ms}$)
     pub fn step_physics_tick(
         &mut self,
         world: &ClientWorldCache,
@@ -166,7 +186,7 @@ impl LocalPlayerPhysics {
     ) {
         self.prev_pos = self.curr_pos;
 
-        // 1. Xu ly Nhay (Jump)
+        // 1. Process Jump
         if self.on_ground && jump_input {
             self.velocity.y = 0.42;
             if self.is_sprinting {
@@ -176,11 +196,11 @@ impl LocalPlayerPhysics {
             }
         }
 
-        // 2. Ap dung trong luc theo cong thuc Vanilla truoc khi di chuyen
+        // 2. Apply Vanilla gravity formula before movement
         // $$v_y^{(t+1)} = (v_y^{(t)} - 0.08) \times 0.98$$
         self.velocity.y = (self.velocity.y - 0.08) * 0.98;
 
-        // 3. Tinh toan gia toc di chuyen theo huong nhin (Yaw)
+        // 3. Calculate movement acceleration along view direction (Yaw)
         let mut move_x = 0.0f64;
         let mut move_z = 0.0f64;
         let input_len_sq = forward_input * forward_input + strafe_input * strafe_input;
@@ -190,7 +210,11 @@ impl LocalPlayerPhysics {
             let norm_strafe = (strafe_input as f64) * inv_len;
 
             let speed = if self.on_ground {
-                if self.is_sprinting { 0.13 } else { 0.10 }
+                if self.is_sprinting {
+                    0.13
+                } else {
+                    0.10
+                }
             } else {
                 0.02
             };
@@ -206,11 +230,11 @@ impl LocalPlayerPhysics {
         self.velocity.x += move_x;
         self.velocity.z += move_z;
 
-        // 4. Swept AABB Collision voi the gioi
+        // 4. Swept AABB collision with world
         let mut player_box = self.bounding_box();
         let motion = self.velocity;
 
-        // Vung quet AABB bao gom ca vi tri hien tai va vi tri du kien
+        // Expanded AABB covering current and target positions
         let expanded_box = Aabb::new(
             DVec3::new(
                 player_box.min.x.min(player_box.min.x + motion.x),
@@ -229,24 +253,24 @@ impl LocalPlayerPhysics {
         let mut actual_y = motion.y;
         let mut actual_z = motion.z;
 
-        // Va cham truc Y truoc (de xac dinh on_ground)
+        // Y-axis collision first (determines on_ground)
         for b in &surrounding {
             actual_y = b.calculate_y_offset(&player_box, actual_y);
         }
         player_box = player_box.offset(DVec3::new(0.0, actual_y, 0.0));
 
-        // Va cham truc X
+        // X-axis collision
         for b in &surrounding {
             actual_x = b.calculate_x_offset(&player_box, actual_x);
         }
         player_box = player_box.offset(DVec3::new(actual_x, 0.0, 0.0));
 
-        // Va cham truc Z
+        // Z-axis collision
         for b in &surrounding {
             actual_z = b.calculate_z_offset(&player_box, actual_z);
         }
 
-        // Cap nhat trang thai on_ground
+        // Update on_ground status
         self.on_ground = motion.y < 0.0 && actual_y != motion.y;
 
         if motion.x != actual_x {
@@ -263,7 +287,7 @@ impl LocalPlayerPhysics {
         self.curr_pos.y += actual_y;
         self.curr_pos.z += actual_z;
 
-        // 5. Ma sat mat dat / khong khi
+        // 5. Ground and air friction
         let friction = if self.on_ground { 0.6 } else { 1.0 };
         let drag = 0.91 * friction;
         self.velocity.x *= drag;
@@ -279,17 +303,22 @@ mod tests {
     #[test]
     fn test_freefall_gravity_parity_vanilla() {
         let world = ClientWorldCache::new();
-        let mut player = LocalPlayerPhysics::default();
-        player.curr_pos = DVec3::new(0.0, 100.0, 0.0);
+        let mut player = LocalPlayerPhysics {
+            curr_pos: DVec3::new(0.0, 100.0, 0.0),
+            ..Default::default()
+        };
 
-        // 10 ticks roi tu do trong khong trung
+        // 10 freefall ticks in midair
         for _ in 0..10 {
             player.step_physics_tick(&world, 0.0, 0.0, false);
         }
 
-        // Theo phuong trinh v_y = (v_y - 0.08) * 0.98, sau 10 ticks:
-        // Vi tri Y phai roi xuong khoang [95.5, 96.5]
-        assert!(player.curr_pos.y > 95.5 && player.curr_pos.y < 96.5, "Y pos: {}", player.curr_pos.y);
+        // According to v_y = (v_y - 0.08) * 0.98, after 10 ticks Y should be in [95.5, 96.5]
+        assert!(
+            player.curr_pos.y > 95.5 && player.curr_pos.y < 96.5,
+            "Y pos: {}",
+            player.curr_pos.y
+        );
         assert!(!player.on_ground);
     }
 
@@ -298,7 +327,7 @@ mod tests {
         let mut world = ClientWorldCache::new();
         let mut chunk = crate::world::ChunkColumn::new(0, 0, 0, 16);
         let stone = CanonicalBlockState::new(1, 0);
-        // Dat mot san da tai Y = 60
+        // Place a stone floor at Y = 60
         for x in 0..16 {
             for z in 0..16 {
                 chunk.set_block(x, 60, z, stone);
@@ -306,15 +335,17 @@ mod tests {
         }
         world.insert_chunk(chunk);
 
-        let mut player = LocalPlayerPhysics::default();
-        player.curr_pos = DVec3::new(8.0, 62.0, 8.0);
+        let mut player = LocalPlayerPhysics {
+            curr_pos: DVec3::new(8.0, 62.0, 8.0),
+            ..Default::default()
+        };
 
-        // Cho roi 20 ticks
+        // Simulate 20 ticks of fall
         for _ in 0..20 {
             player.step_physics_tick(&world, 0.0, 0.0, false);
         }
 
-        // Nguoi choi phai dung vung tren mat khoi tai Y = 61.0
+        // Verify player lands securely on block surface at Y = 61.0
         assert_eq!(player.curr_pos.y, 61.0);
         assert!(player.on_ground);
         assert_eq!(player.velocity.y, 0.0);

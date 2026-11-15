@@ -14,6 +14,7 @@ members = [
     "crates/casx_launcher",
     "crates/casx_client",
 ]
+default-members = ["crates/casx_client"]
 resolver = "2"
 
 [workspace.dependencies]

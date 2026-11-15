@@ -1,9 +1,9 @@
 // crates/casx_core/src/jmath.rs
-// Bo cong cu toan hoc 64-bit vector va hop gioi han AABB chuan Minecraft Engine
+// 64-bit vector and AABB bounding box math utilities for Minecraft Engine
 
-use std::ops::{Add, AddAssign, Sub, SubAssign, Mul};
+use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
 
-/// Vector 3 chieu so thuc chinh xac kep (64-bit float)
+/// 3-dimensional double-precision floating point vector (64-bit float)
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct DVec3 {
     pub x: f64,
@@ -12,7 +12,11 @@ pub struct DVec3 {
 }
 
 impl DVec3 {
-    pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
 
     #[inline]
     pub const fn new(x: f64, y: f64, z: f64) -> Self {
@@ -41,7 +45,11 @@ impl DVec3 {
 
     #[inline]
     pub fn floor_to_ivec3(&self) -> IVec3 {
-        IVec3::new(self.x.floor() as i32, self.y.floor() as i32, self.z.floor() as i32)
+        IVec3::new(
+            self.x.floor() as i32,
+            self.y.floor() as i32,
+            self.z.floor() as i32,
+        )
     }
 
     #[inline]
@@ -96,7 +104,7 @@ impl Mul<f64> for DVec3 {
     }
 }
 
-/// Vector 3 chieu so nguyen 32-bit (Toa do Block/Chunk)
+/// 32-bit signed integer 3D vector (Block/Chunk coordinates).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct IVec3 {
     pub x: i32,
@@ -118,7 +126,7 @@ impl IVec3 {
     }
 }
 
-/// Hop gioi han Axis-Aligned Bounding Box (AABB) do chinh xac kep f64
+/// Axis-Aligned Bounding Box (AABB) using 64-bit floating point precision.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AABB {
     pub min: DVec3,
@@ -134,7 +142,7 @@ impl AABB {
         }
     }
 
-    /// Tao AABB cho 1 block dac tai toa do nguyen pos
+    /// Creates an AABB for a 1x1x1 solid block at integer grid coordinate pos.
     #[inline]
     pub fn from_block(pos: IVec3) -> Self {
         let min = pos.to_dvec3();
@@ -142,14 +150,18 @@ impl AABB {
         Self { min, max }
     }
 
-    /// Tao AABB cho thuc the nguoi choi tai vi tri chan feet_pos
+    /// Creates an AABB for a player entity given feet position (0.6x1.8x0.6).
     #[inline]
     pub fn player_box(feet_pos: DVec3) -> Self {
-        let half_w = 0.3; // Chieu rong 0.6m -> ban kinh 0.3m
-        let height = 1.8; // Chieu cao 1.8m
+        let half_w = 0.3;
+        let height = 1.8;
         Self {
             min: DVec3::new(feet_pos.x - half_w, feet_pos.y, feet_pos.z - half_w),
-            max: DVec3::new(feet_pos.x + half_w, feet_pos.y + height, feet_pos.z + half_w),
+            max: DVec3::new(
+                feet_pos.x + half_w,
+                feet_pos.y + height,
+                feet_pos.z + half_w,
+            ),
         }
     }
 
@@ -163,14 +175,21 @@ impl AABB {
 
     #[inline]
     pub fn intersects(&self, other: &Self) -> bool {
-        self.max.x > other.min.x && self.min.x < other.max.x &&
-        self.max.y > other.min.y && self.min.y < other.max.y &&
-        self.max.z > other.min.z && self.min.z < other.max.z
+        self.max.x > other.min.x
+            && self.min.x < other.max.x
+            && self.max.y > other.min.y
+            && self.min.y < other.max.y
+            && self.max.z > other.min.z
+            && self.min.z < other.max.z
     }
 
-    /// Tinh toan do lech theo truc X de tranh va cham voi hop bao chuong ngai vat `self` khi `moving` di chuyen
+    /// Calculates allowed X displacement to prevent collision with obstacle `self`.
     pub fn calculate_x_offset(&self, moving: &Self, mut offset_x: f64) -> f64 {
-        if moving.max.y > self.min.y && moving.min.y < self.max.y && moving.max.z > self.min.z && moving.min.z < self.max.z {
+        if moving.max.y > self.min.y
+            && moving.min.y < self.max.y
+            && moving.max.z > self.min.z
+            && moving.min.z < self.max.z
+        {
             if offset_x > 0.0 && moving.max.x <= self.min.x {
                 let d = self.min.x - moving.max.x;
                 if d < offset_x {
@@ -186,9 +205,13 @@ impl AABB {
         offset_x
     }
 
-    /// Tinh toan do lech theo truc Y de tranh va cham voi hop bao chuong ngai vat `self` khi `moving` di chuyen
+    /// Calculates allowed Y displacement to prevent collision with obstacle `self`.
     pub fn calculate_y_offset(&self, moving: &Self, mut offset_y: f64) -> f64 {
-        if moving.max.x > self.min.x && moving.min.x < self.max.x && moving.max.z > self.min.z && moving.min.z < self.max.z {
+        if moving.max.x > self.min.x
+            && moving.min.x < self.max.x
+            && moving.max.z > self.min.z
+            && moving.min.z < self.max.z
+        {
             if offset_y > 0.0 && moving.max.y <= self.min.y {
                 let d = self.min.y - moving.max.y;
                 if d < offset_y {
@@ -204,9 +227,13 @@ impl AABB {
         offset_y
     }
 
-    /// Tinh toan do lech theo truc Z de tranh va cham voi hop bao chuong ngai vat `self` khi `moving` di chuyen
+    /// Calculates allowed Z displacement to prevent collision with obstacle `self`.
     pub fn calculate_z_offset(&self, moving: &Self, mut offset_z: f64) -> f64 {
-        if moving.max.x > self.min.x && moving.min.x < self.max.x && moving.max.y > self.min.y && moving.min.y < self.max.y {
+        if moving.max.x > self.min.x
+            && moving.min.x < self.max.x
+            && moving.max.y > self.min.y
+            && moving.min.y < self.max.y
+        {
             if offset_z > 0.0 && moving.max.z <= self.min.z {
                 let d = self.min.z - moving.max.z;
                 if d < offset_z {

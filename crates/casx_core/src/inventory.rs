@@ -1,8 +1,8 @@
-//! Quan ly kho do nguoi choi va Container Window (Menu Ruong/Shop Server).
+//! Player inventory and server container window management.
 
 use crate::nbt::NbtTag;
 
-/// Vat pham trong mot o kho do
+/// Item stack in an inventory slot
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemStack {
     pub item_id: i32,
@@ -43,7 +43,7 @@ impl ItemStack {
     }
 }
 
-/// Vat pham tieu chuan hoa xuyen suot giua 1.12.2 va 26.2 (Canonical ItemStack)
+/// Normalized item stack shared across protocol versions (Canonical ItemStack)
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CanonicalItemStack {
     pub id: u32,
@@ -90,15 +90,15 @@ impl CanonicalItemStack {
     }
 }
 
-/// Giao dien cua so Container cua Server (Ruong, Ban che tao, Menu NPC)
+/// Container window interface (Chests, Crafting Table, NPC Menus)
 #[derive(Debug, Clone)]
 pub struct ContainerWindow {
     pub window_id: u8,
     pub title: String,
     pub slots: Vec<ItemStack>,
     pub cursor_item: ItemStack,
-    pub action_number: i16, // So thu tu hanh dong cho 1.12.2
-    pub state_id: i32,      // Dinh danh trang thai cho 26.2
+    pub action_number: i16, // Action sequence number for 1.12.2
+    pub state_id: i32,      // State ID for 26.2
 }
 
 impl ContainerWindow {
@@ -136,22 +136,22 @@ impl ContainerWindow {
         current
     }
 
-    /// Xu ly click chuot vao mot o vat pham (Left-click button = 0, Right-click button = 1)
+    /// Handles mouse click on slot (Left-click button = 0, Right-click button = 1)
     pub fn click_slot(&mut self, slot_idx: usize, button: u8, mode: u8) -> (i16, i32) {
         let action = self.next_action_number();
 
         if slot_idx < self.slots.len() && mode == 0 {
-            // Mode 0: Click binh thuong
+            // Mode 0: Normal click
             if button == 0 {
-                // Chuot trai: Trac doi vat pham voi chuot
+                // Left-click: Swap item with cursor
                 let temp = self.slots[slot_idx].clone();
                 self.slots[slot_idx] = self.cursor_item.clone();
                 self.cursor_item = temp;
             } else if button == 1 {
-                // Chuot phai: Dat 1 nua hoac dat 1 vat pham xuong
+                // Right-click: Place half or single item
                 if self.cursor_item.is_empty() {
                     let count = self.slots[slot_idx].count;
-                    let half = (count + 1) / 2;
+                    let half = count.div_ceil(2);
                     let remaining = count - half;
                     self.cursor_item = self.slots[slot_idx].clone();
                     self.cursor_item.count = half;
@@ -180,20 +180,20 @@ mod tests {
 
     #[test]
     fn test_container_click_and_action_numbers() {
-        let mut window = ContainerWindow::new(1, "Menu Server", 54);
+        let mut window = ContainerWindow::new(1, "Server Menu", 54);
         let diamond_sword = ItemStack::new(276, 1, 0);
         window.set_slot(13, diamond_sword.clone());
 
         assert_eq!(window.get_slot(13), Some(&diamond_sword));
         assert!(window.cursor_item.is_empty());
 
-        // Bấm chuột trái vào ô 13 để nhặt kiếm lên con trỏ
+        // Left-click slot 13 to pick up sword onto cursor
         let (action, _) = window.click_slot(13, 0, 0);
         assert_eq!(action, 1);
         assert_eq!(window.cursor_item, diamond_sword);
         assert!(window.get_slot(13).unwrap().is_empty());
 
-        // Bấm chuột trái vào ô 14 để đặt kiếm xuống
+        // Left-click slot 14 to place sword down
         let (action2, _) = window.click_slot(14, 0, 0);
         assert_eq!(action2, 2);
         assert!(window.cursor_item.is_empty());

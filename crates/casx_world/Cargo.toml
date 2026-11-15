@@ -2,6 +2,7 @@
 name = "casx-world"
 version = "0.1.0"
 edition = "2021"
+description = "Chunk section storage, paletted containers, and lighting buffers."
 
 [dependencies]
 casx_core = { workspace = true }

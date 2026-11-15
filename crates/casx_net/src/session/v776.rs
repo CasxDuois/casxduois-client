@@ -1,11 +1,11 @@
 // crates/casx_net/src/session/v776.rs
-// Trinh quan ly phien Minecraft 26.2 (Protocol 776) kem trang thai Configuration
+// Minecraft 26.2 (Protocol 776) session manager with Configuration state
 
+use crate::codec::compression::PacketCompressor;
+use crate::codec::frame::RawPacket;
+use crate::codec::varint::{read_varint_from_buf, write_varint_to_buf};
 use bytes::{Bytes, BytesMut};
 use casx_core::ProtocolError;
-use crate::codec::frame::RawPacket;
-use crate::codec::compression::PacketCompressor;
-use crate::codec::varint::{write_varint_to_buf, read_varint_from_buf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionStateV776 {
@@ -18,14 +18,35 @@ pub enum SessionStateV776 {
 
 #[derive(Debug, Clone)]
 pub enum SessionEventV776 {
-    LoginSuccess { uuid: String, username: String },
+    LoginSuccess {
+        uuid: String,
+        username: String,
+    },
     ConfigurationStarted,
-    DimensionRegistryReceived { min_y: i32, height: u32 },
+    DimensionRegistryReceived {
+        min_y: i32,
+        height: u32,
+    },
     ConfigurationFinished,
-    KeepAliveReceived { id: i64 },
-    PlayerPosSync { x: f64, y: f64, z: f64, yaw: f32, pitch: f32, teleport_id: i32 },
-    ChunkDataReceived { chunk_x: i32, chunk_z: i32, data_len: usize },
-    Disconnect { reason: String },
+    KeepAliveReceived {
+        id: i64,
+    },
+    PlayerPosSync {
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f32,
+        pitch: f32,
+        teleport_id: i32,
+    },
+    ChunkDataReceived {
+        chunk_x: i32,
+        chunk_z: i32,
+        data_len: usize,
+    },
+    Disconnect {
+        reason: String,
+    },
 }
 
 pub struct SessionV776 {
@@ -53,7 +74,7 @@ impl SessionV776 {
         }
     }
 
-    /// Tao goi tin Handshake (0x00) va Login Start (0x00) cho Protocol 776
+    /// Creates Handshake (0x00) and Login Start (0x00) for Protocol 776
     pub fn create_handshake_and_login(&mut self, host: &str, port: u16) {
         // 1. Handshake Packet (0x00)
         let mut hs_payload = BytesMut::new();
@@ -80,7 +101,10 @@ impl SessionV776 {
     }
 
     /// Xu ly du lieu bytes nhan tu socket TCP
-    pub fn process_incoming_bytes(&mut self, bytes: &[u8]) -> Result<Vec<SessionEventV776>, ProtocolError> {
+    pub fn process_incoming_bytes(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<Vec<SessionEventV776>, ProtocolError> {
         self.incoming_buffer.extend_from_slice(bytes);
         let mut events = Vec::new();
 
@@ -103,7 +127,10 @@ impl SessionV776 {
         Ok(events)
     }
 
-    fn handle_packet(&mut self, packet: RawPacket) -> Result<Option<SessionEventV776>, ProtocolError> {
+    fn handle_packet(
+        &mut self,
+        packet: RawPacket,
+    ) -> Result<Option<SessionEventV776>, ProtocolError> {
         match self.state {
             SessionStateV776::Login => match packet.id {
                 0x03 => {
@@ -123,20 +150,24 @@ impl SessionV776 {
                     } else {
                         "unknown-uuid".to_string()
                     };
-                    let username = self.read_string(&mut payload).unwrap_or_else(|_| self.nickname.clone());
+                    let username = self
+                        .read_string(&mut payload)
+                        .unwrap_or_else(|_| self.nickname.clone());
 
-                    // GUI BAT BUOC: Login Acknowledged (0x03) de chuyen sang Configuration
+                    // Send Login Acknowledged (0x03) to transition into Configuration state
                     self.send_login_acknowledged()?;
                     self.state = SessionStateV776::Configuration;
 
-                    // Tu dong gui Client Information ban dau
+                    // Automatically send initial Client Information packet
                     self.send_client_information()?;
 
                     Ok(Some(SessionEventV776::LoginSuccess { uuid, username }))
                 }
                 0x00 => {
                     let mut payload = BytesMut::from(&packet.payload[..]);
-                    let reason = self.read_string(&mut payload).unwrap_or_else(|_| "Disconnected".to_string());
+                    let reason = self
+                        .read_string(&mut payload)
+                        .unwrap_or_else(|_| "Disconnected".to_string());
                     self.state = SessionStateV776::Disconnected;
                     Ok(Some(SessionEventV776::Disconnect { reason }))
                 }
@@ -153,7 +184,10 @@ impl SessionV776 {
                     // Gia su lay duoc min_y = -64 va height = 384
                     self.min_y = -64;
                     self.height = 384;
-                    Ok(Some(SessionEventV776::DimensionRegistryReceived { min_y: self.min_y, height: self.height }))
+                    Ok(Some(SessionEventV776::DimensionRegistryReceived {
+                        min_y: self.min_y,
+                        height: self.height,
+                    }))
                 }
                 0x03 => {
                     // Finish Configuration tu Server -> gui lai Acknowledge Finish Configuration (0x03)
@@ -190,7 +224,14 @@ impl SessionV776 {
                         // Gui Teleport Confirm (0x00)
                         self.send_teleport_confirm(teleport_id)?;
 
-                        Ok(Some(SessionEventV776::PlayerPosSync { x, y, z, yaw, pitch, teleport_id }))
+                        Ok(Some(SessionEventV776::PlayerPosSync {
+                            x,
+                            y,
+                            z,
+                            yaw,
+                            pitch,
+                            teleport_id,
+                        }))
                     } else {
                         Ok(None)
                     }
@@ -201,7 +242,11 @@ impl SessionV776 {
                     if payload.len() >= 8 {
                         let chunk_x = i32::from_be_bytes(payload[0..4].try_into().unwrap());
                         let chunk_z = i32::from_be_bytes(payload[4..8].try_into().unwrap());
-                        Ok(Some(SessionEventV776::ChunkDataReceived { chunk_x, chunk_z, data_len: payload.len() }))
+                        Ok(Some(SessionEventV776::ChunkDataReceived {
+                            chunk_x,
+                            chunk_z,
+                            data_len: payload.len(),
+                        }))
                     } else {
                         Ok(None)
                     }
@@ -212,13 +257,13 @@ impl SessionV776 {
         }
     }
 
-    /// Gui Login Acknowledged (C->S 0x03) o trang thai Login de vao Configuration
+    /// Sends Login Acknowledged (C->S 0x03) in Login state to enter Configuration
     pub fn send_login_acknowledged(&mut self) -> Result<(), ProtocolError> {
         let packet = RawPacket::new(0x03, Bytes::new());
         self.queue_packet(&packet)
     }
 
-    /// Gui Client Information (C->S 0x00) o trang thai Configuration
+    /// Sends Client Information (C->S 0x00) in Configuration state
     pub fn send_client_information(&mut self) -> Result<(), ProtocolError> {
         let mut payload = BytesMut::new();
         // locale "en_US"
@@ -235,7 +280,7 @@ impl SessionV776 {
         self.queue_packet(&packet)
     }
 
-    /// Phan hoi Select Known Packs (C->S 0x07)
+    /// Responds to Select Known Packs (C->S 0x07)
     pub fn send_known_packs_reply(&mut self) -> Result<(), ProtocolError> {
         let mut payload = BytesMut::new();
         write_varint_to_buf(1, &mut payload); // 1 pack
@@ -253,19 +298,19 @@ impl SessionV776 {
         self.queue_packet(&packet)
     }
 
-    /// Gui Acknowledge Finish Configuration (C->S 0x03)
+    /// Sends Acknowledge Finish Configuration (C->S 0x03)
     pub fn send_acknowledge_finish_configuration(&mut self) -> Result<(), ProtocolError> {
         let packet = RawPacket::new(0x03, Bytes::new());
         self.queue_packet(&packet)
     }
 
-    /// Gui Keep Alive (C->S 0x15) trong Play
+    /// Sends Keep Alive (C->S 0x15) in Play
     pub fn send_keep_alive(&mut self, id: i64) -> Result<(), ProtocolError> {
         let packet = RawPacket::new(0x15, Bytes::copy_from_slice(&id.to_be_bytes()));
         self.queue_packet(&packet)
     }
 
-    /// Gui Teleport Confirm (C->S 0x00) trong Play
+    /// Sends Teleport Confirm (C->S 0x00) in Play
     pub fn send_teleport_confirm(&mut self, teleport_id: i32) -> Result<(), ProtocolError> {
         let mut payload = BytesMut::new();
         write_varint_to_buf(teleport_id, &mut payload);
@@ -283,8 +328,7 @@ impl SessionV776 {
     }
 
     fn read_string(&self, buf: &mut BytesMut) -> Result<String, ProtocolError> {
-        let len = read_varint_from_buf(buf)?
-            .ok_or(ProtocolError::UnexpectedEof)? as usize;
+        let len = read_varint_from_buf(buf)?.ok_or(ProtocolError::UnexpectedEof)? as usize;
         if buf.len() < len {
             return Err(ProtocolError::UnexpectedEof);
         }

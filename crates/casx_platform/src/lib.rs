@@ -1,30 +1,30 @@
-//! Crate `casx_platform` (Tang 1 trong do thi phu thuoc DAG).
+//! Crate `casx_platform` (Layer 1 in DAG).
 //!
-//! Trach nhiem:
-//! - Do luong thong so phan cung va he dieu hanh (`PlatformTelemetry`).
-//! - Dong ho do do phan giai nano giay va tinh toan ngan sach thoi gian khung hinh (`HighResolutionTimer`).
-//! - Dinh vi thu muc cai dat goc Minecraft tren moi he dieu hanh (`detect_default_minecraft_dir`).
+//! Responsibilities:
+//! - Hardware telemetry and system monitoring (`PlatformTelemetry`).
+//! - High-resolution nanosecond timer and frame budget accumulator (`HighResolutionTimer`).
+//! - Standard OS Minecraft directory detection (`detect_default_minecraft_dir`).
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, ProcessRefreshKind, RefreshKind, System};
 use thiserror::Error;
 
-/// Loi phat sinh trong phan he nen tang va phan cung
+/// Platform and hardware errors.
 #[derive(Debug, Error)]
 pub enum PlatformError {
-    #[error("[PlatformError::PathNotFound] Thu muc khong ton tai: {0:?}")]
+    #[error("Directory not found: {0:?}")]
     PathNotFound(PathBuf),
 
-    #[error("[PlatformError::EnvVarMissing] Khong tim thay bien moi truong he thong: {0}")]
+    #[error("Environment variable missing: {0}")]
     EnvVarMissing(String),
 
-    #[error("[PlatformError::Io] Loi I/O he thong: {0}")]
+    #[error("System I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
 
-/// Thu thap va giam sat thong so tai nguyen phan cung theo thoi gian thuc
+/// Collects and monitors system hardware metrics.
 pub struct PlatformTelemetry {
     system: System,
     last_refresh: Instant,
@@ -38,13 +38,12 @@ impl Default for PlatformTelemetry {
 }
 
 impl PlatformTelemetry {
-    /// Khoi tao bo giam sat voi chu ky cap nhat toi thieu
-    ///
-    /// Khong cap nhat CPU moi khung hinh de tranh chi phi goi kernel OS vuot qua $0.05\text{ ms}$.
+    /// Initializes system telemetry with a minimum refresh interval.
     pub fn new(refresh_interval: Duration) -> Self {
         let refresh_kind = RefreshKind::new()
             .with_cpu(CpuRefreshKind::everything())
-            .with_memory(MemoryRefreshKind::everything());
+            .with_memory(MemoryRefreshKind::everything())
+            .with_processes(ProcessRefreshKind::everything());
         let system = System::new_with_specifics(refresh_kind);
         Self {
             system,
@@ -53,7 +52,7 @@ impl PlatformTelemetry {
         }
     }
 
-    /// Cap nhat so lieu he thong neu vuot qua chu ky refresh_interval
+    /// Polls system updates if the refresh interval has elapsed.
     pub fn poll_updates(&mut self) {
         if self.last_refresh.elapsed() >= self.refresh_interval {
             self.system.refresh_cpu_all();
@@ -62,31 +61,41 @@ impl PlatformTelemetry {
         }
     }
 
-    /// Muc su dung CPU trung binh cua tat ca cac loi (theo ty le phan tram $[0.0, 100.0]$)
+    /// Global CPU utilization across all cores in percent [0.0, 100.0].
     pub fn global_cpu_usage(&self) -> f32 {
         self.system.global_cpu_usage()
     }
 
-    /// Tong dung luong RAM vat ly cua he thong tinh bang Megabytes
+    /// Total system physical memory in Megabytes.
     pub fn total_memory_mb(&self) -> u64 {
         self.system.total_memory() / (1024 * 1024)
     }
 
-    /// Dung luong RAM da su dung boi toan he thong tinh bang Megabytes
+    /// System used memory in Megabytes.
     pub fn used_memory_mb(&self) -> u64 {
         self.system.used_memory() / (1024 * 1024)
     }
 
-    /// Dung luong RAM con trong cua he thong tinh bang Megabytes
+    /// System free memory in Megabytes.
     pub fn free_memory_mb(&self) -> u64 {
         self.system.free_memory() / (1024 * 1024)
     }
+
+    /// Process resident set size (RSS) memory in Kilobytes.
+    pub fn process_memory_kb(&mut self) -> u64 {
+        use sysinfo::Pid;
+        let pid = Pid::from_u32(std::process::id());
+        self.system
+            .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]));
+        if let Some(process) = self.system.process(pid) {
+            process.memory() / 1024
+        } else {
+            0
+        }
+    }
 }
 
-/// Dong ho do thoi gian do phan giai nano giay phuc vu cho vong lap Render va Physics Tick
-///
-/// Voi chu ky tick co dinh cua Minecraft $\Delta t_{\text{tick}} = 50\text{ ms}$ ($20\text{ TPS}$)
-/// va ngan sach khung hinh $\Delta t_{\text{frame}} \le 1.66\text{ ms}$ ($\ge 600\text{ FPS}$).
+/// High-resolution nanosecond timer for rendering and physics loops.
 pub struct HighResolutionTimer {
     start_time: Instant,
     last_frame_time: Instant,
@@ -102,7 +111,7 @@ impl Default for HighResolutionTimer {
 }
 
 impl HighResolutionTimer {
-    /// Khoi tao bo dem thoi gian voi cua so truot de tinh FPS trung binh
+    /// Initializes timer with a sliding window for moving average FPS calculation.
     pub fn new(window_size: usize) -> Self {
         let now = Instant::now();
         Self {
@@ -114,7 +123,7 @@ impl HighResolutionTimer {
         }
     }
 
-    /// Cap nhat moc thoi gian cho khung hinh moi va tra ve $\Delta t = t_k - t_{k-1}$ tinh bang giay
+    /// Updates timestamp and returns delta seconds.
     pub fn tick_frame(&mut self) -> f64 {
         let now = Instant::now();
         let duration = now.duration_since(self.last_frame_time);
@@ -129,23 +138,22 @@ impl HighResolutionTimer {
         self.delta_seconds
     }
 
-    /// Khoang thoi gian cua khung hinh gan nhat tinh bang giay
+    /// Elapsed time of the latest frame in seconds.
     pub fn delta_seconds(&self) -> f64 {
         self.delta_seconds
     }
 
-    /// Khoang thoi gian cua khung hinh gan nhat tinh bang mili giay
+    /// Elapsed time of the latest frame in milliseconds.
     pub fn delta_millis(&self) -> f64 {
         self.delta_seconds * 1000.0
     }
 
-    /// Tong thoi gian da troi qua tu khi khoi dong bo dem
+    /// Total time elapsed since timer creation.
     pub fn total_elapsed(&self) -> Duration {
         self.start_time.elapsed()
     }
 
-    /// Tinh toan chi so FPS trung binh dua tren cua so truot:
-    /// $$\text{FPS}_{\text{avg}} = \frac{N}{\sum_{i=1}^N \Delta t_i}$$
+    /// Calculates moving average FPS.
     pub fn average_fps(&self) -> f64 {
         if self.frame_durations.is_empty() {
             return 0.0;
@@ -159,9 +167,7 @@ impl HighResolutionTimer {
     }
 }
 
-/// Dinh vi thu muc cai dat Minecraft goc tren he dieu hanh dang chay
-///
-/// Uu tien bien moi truong `CASX_MINECRAFT_DIR` neu duoc nguoi dung thiet lap thu cong.
+/// Locates default Minecraft installation directory for the current platform.
 pub fn detect_default_minecraft_dir() -> Option<PathBuf> {
     if let Ok(custom) = std::env::var("CASX_MINECRAFT_DIR") {
         let p = PathBuf::from(custom);
@@ -206,7 +212,7 @@ pub fn detect_default_minecraft_dir() -> Option<PathBuf> {
     None
 }
 
-/// Xac thuc thu muc ton tai tren o dia va tra ve duong dan tuyet doi
+/// Verifies directory existence and canonicalizes path.
 pub fn verify_directory_exists(path: &Path) -> Result<PathBuf, PlatformError> {
     if path.is_dir() {
         path.canonicalize().map_err(PlatformError::Io)
@@ -225,16 +231,19 @@ mod tests {
         let mut timer = HighResolutionTimer::new(10);
         assert_eq!(timer.average_fps(), 0.0);
 
-        // Gia lap 3 khung hinh voi khoang nghi 5ms
         for _ in 0..3 {
             sleep(Duration::from_millis(5));
             let delta = timer.tick_frame();
-            assert!(delta >= 0.004, "Delta time phai >= 4ms");
+            assert!(delta >= 0.004, "Delta time must be >= 4ms");
             assert!(timer.delta_millis() >= 4.0);
         }
 
         let fps = timer.average_fps();
-        assert!(fps > 0.0 && fps <= 300.0, "FPS tinh toan phai nam trong dai hop ly: {}", fps);
+        assert!(
+            fps > 0.0 && fps <= 300.0,
+            "Average FPS within reasonable range: {}",
+            fps
+        );
     }
 
     #[test]
@@ -242,20 +251,23 @@ mod tests {
         let mut telemetry = PlatformTelemetry::default();
         telemetry.poll_updates();
         let total = telemetry.total_memory_mb();
-        assert!(total > 0, "Tong dung luong RAM he thong phai lon hon 0 MB");
+        assert!(total > 0, "System memory must be greater than 0 MB");
     }
 
     #[test]
     fn test_verify_directory_exists_on_current_dir() {
         let current_dir = Path::new(".");
         let verified = verify_directory_exists(current_dir);
-        assert!(verified.is_ok(), "Thu muc hien tai phai xac thuc thanh cong");
+        assert!(
+            verified.is_ok(),
+            "Current directory should verify successfully"
+        );
     }
 
     #[test]
     fn test_verify_directory_not_found() {
-        let non_existent = Path::new("path_khong_he_ton_tai_12345");
+        let non_existent = Path::new("path_does_not_exist_12345");
         let result = verify_directory_exists(non_existent);
-        assert!(result.is_err(), "Duong dan khong ton tai phai tra ve loi");
+        assert!(result.is_err(), "Non-existent path should return an error");
     }
 }

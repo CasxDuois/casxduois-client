@@ -1,4 +1,4 @@
-//! Mat ma hoc va xac thuc cho CasxDuois Client (AES-128-CFB8, Mojang ServerHash SHA-1, UUIDv3).
+//! Cryptography and authentication for Minecraft network sessions (AES-128-CFB8, Mojang SHA-1, offline UUIDv3).
 
 use aes::Aes128;
 use cfb8::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
@@ -9,29 +9,30 @@ use sha1::{Digest, Sha1};
 type AesCfb8Enc = Encryptor<Aes128>;
 type AesCfb8Dec = Decryptor<Aes128>;
 
-/// Cap bo ma hoa va giai ma luong doi xung AES-128-CFB8 cho TCP Socket
+/// AES-128-CFB8 symmetric stream cipher pair for TCP socket encryption.
 pub struct StreamCipherPair {
     encryptor: AesCfb8Enc,
     decryptor: AesCfb8Dec,
 }
 
 impl StreamCipherPair {
-    /// Khoi tao cap cipher voi khoa bi mat 16-bytes
-    ///
-    /// Theo dac ta Minecraft, IV ban dau su dung chinh gia tri cua shared secret key.
+    /// Initializes cipher pair with 16-byte shared secret key and matching IV.
     pub fn new(key: &[u8; 16]) -> Self {
         let encryptor = AesCfb8Enc::new(key.into(), key.into());
         let decryptor = AesCfb8Dec::new(key.into(), key.into());
-        Self { encryptor, decryptor }
+        Self {
+            encryptor,
+            decryptor,
+        }
     }
 
-    /// Ma hoa du lieu tai cho (in-place) truoc khi ghi xuong TCP Socket
+    /// Encrypts byte slice in-place prior to TCP socket transmission.
     pub fn encrypt(&mut self, data: &mut [u8]) {
         let (blocks, _) = cfb8::cipher::inout::InOutBuf::from(data).into_chunks();
         self.encryptor.encrypt_blocks_inout_mut(blocks);
     }
 
-    /// Giai ma du lieu tai cho (in-place) ngay khi doc tu TCP Socket
+    /// Decrypts byte slice in-place upon receiving from TCP socket.
     pub fn decrypt(&mut self, data: &mut [u8]) {
         let (blocks, _) = cfb8::cipher::inout::InOutBuf::from(data).into_chunks();
         self.decryptor.decrypt_blocks_inout_mut(blocks);
@@ -40,7 +41,7 @@ impl StreamCipherPair {
 
 /// Tinh toan chuoi bam ServerHash SHA-1 theo kieu Two's Complement Hex Digest cua Mojang
 ///
-/// Cong thuc:
+/// Formula:
 /// $$\text{Digest} = \text{SHA-1}(\text{ServerID}_{\text{ASCII}} \parallel \text{SharedSecret}_{16\text{B}} \parallel \text{PublicKey}_{\text{DER}})$$
 pub fn mojang_server_hash(server_id: &str, shared_secret: &[u8], public_key_der: &[u8]) -> String {
     let mut hasher = Sha1::new();
@@ -52,7 +53,7 @@ pub fn mojang_server_hash(server_id: &str, shared_secret: &[u8], public_key_der:
     format_mojang_twos_complement(&digest)
 }
 
-/// Dinh dang mang byte 20-bytes thanh chuoi Hex co dau Two's Complement theo quy uoc Mojang
+/// Formats 20-byte digest as signed two's complement hex string following Mojang specification
 pub fn format_mojang_twos_complement(digest: &[u8]) -> String {
     let is_negative = (digest[0] & 0x80) != 0;
 
@@ -76,7 +77,7 @@ pub fn format_mojang_twos_complement(digest: &[u8]) -> String {
             hex
         }
     } else {
-        // Lay phan bu hai: dao tat ca cac bit va cong 1
+        // Two's complement: negate bits and add 1
         let mut carry = 1u16;
         let mut twos_comp = vec![0u8; digest.len()];
         for i in (0..digest.len()).rev() {
@@ -107,9 +108,9 @@ pub fn format_mojang_twos_complement(digest: &[u8]) -> String {
     }
 }
 
-/// Sinh UUIDv3 offline cho nguoi choi tu ten dang nhap (`OfflinePlayer:<username>`)
+/// Generates offline UUIDv3 for player username (`OfflinePlayer:<username>`)
 ///
-/// Dung de tao UUID co dinh cho cac may chu Offline (non-premium) hoac AuthMe.
+/// Used to create persistent UUID for offline (non-premium) servers or AuthMe authentication.
 pub fn generate_offline_uuid(username: &str) -> u128 {
     let mut hasher = Md5::new();
     hasher.update(b"OfflinePlayer:");
@@ -124,7 +125,7 @@ pub fn generate_offline_uuid(username: &str) -> u128 {
     u128::from_be_bytes(md5_bytes.into())
 }
 
-/// Dinh dang u128 thanh chuoi UUID chuan 8-4-4-4-12
+/// Formats u128 into standard 8-4-4-4-12 UUID string
 pub fn format_uuid(uuid: u128) -> String {
     format!(
         "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
@@ -149,15 +150,15 @@ mod tests {
 
     #[test]
     fn test_mojang_server_hash_known_cases() {
-        // Truong hop 1: SHA-1 cho chuoi "Notch" (Duong)
+        // Case 1: SHA-1 for "Notch" (positive)
         let hash_positive = mojang_server_hash("Notch", b"", b"");
         assert_eq!(hash_positive, "4ed1f46bbe04bc756bcb17c0c7ce3e4632f06a48");
 
-        // Truong hop 2: SHA-1 cho chuoi "jeb_" (Am)
+        // Case 2: SHA-1 for "jeb_" (negative)
         let hash_negative = mojang_server_hash("jeb_", b"", b"");
         assert_eq!(hash_negative, "-7c9d5b0044c130109a5d7b5fb5c317c02b4e28c1");
 
-        // Truong hop 3: SHA-1 cho chuoi "simon" (Duong)
+        // Case 3: SHA-1 for "simon" (positive)
         let hash_simon = mojang_server_hash("simon", b"", b"");
         assert_eq!(hash_simon, "88e16a1019277b15d58faf0541e11910eb756f6");
     }
@@ -168,14 +169,17 @@ mod tests {
         let mut cipher_enc = StreamCipherPair::new(&key);
         let mut cipher_dec = StreamCipherPair::new(&key);
 
-        let original = b"Day la goi tin du lieu Minecraft can ma hoa!".to_vec();
+        let original = b"Minecraft protocol AES-128 CFB8 encryption test payload".to_vec();
         let mut encrypted = original.clone();
 
         cipher_enc.encrypt(&mut encrypted);
-        assert_ne!(original, encrypted, "Du lieu sau khi ma hoa phai thay doi");
+        assert_ne!(
+            original, encrypted,
+            "Encrypted data must differ from original"
+        );
 
         let mut decrypted = encrypted;
         cipher_dec.decrypt(&mut decrypted);
-        assert_eq!(original, decrypted, "Du lieu sau khi giai ma phai trung khop ban dau");
+        assert_eq!(original, decrypted, "Decrypted data must match original");
     }
 }

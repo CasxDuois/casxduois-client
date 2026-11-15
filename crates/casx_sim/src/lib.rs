@@ -1,4 +1,4 @@
-//! Crate `casx-sim`: Vong lap vat ly 20 TPS, va cham AABB Swept, do tia 3D DDA va tiep dat tren dia hinh Voxel.
+//! Crate `casx-sim`: Fixed 20 TPS client physics, AABB collision resolution, and inventory state.
 
 pub mod aabb;
 pub mod raycast;

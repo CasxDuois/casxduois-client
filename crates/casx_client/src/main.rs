@@ -1,9 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-//! Diem vao thuc thi chinh cua CasxDuois Client (Tang 4 trong do thi phu thuoc DAG).
+//! Primary client executable integrating launcher, simulation, and rendering.
 //!
-//! Dong goi 1 file duy nhat CasxDuois.exe ho tro 2 che do:
-//! - Che do 1: In-Window Morphing (Mo truc tiep Launcher Hub -> Vao game 3D trong 0.1s)
-//! - Che do 2: Subprocess Spawn (--mode client/afk --ver 340/776 qua std::env::current_exe())
+//! Packaged into a single standalone binary `CasxDuois.exe` supporting:
+//! - Graphical 3D client mode with launcher viewport and in-game HUD
+//! - Headless Eco-AFK subprocess execution
 
 use casx_assets::{generate_procedural_atlas, AssetBootstrapper, TextureAtlas};
 use casx_core::ctl_server::CasxCtlServer;
@@ -19,42 +19,55 @@ use casx_sim::{raycast_world, PlayerSimulation, VoxelHit};
 use casx_ui::{CasxUiApp, ScreenMode, UiAction};
 use casx_world::WorldStorage;
 use clap::Parser;
+use log::{debug, error, info, warn};
 use proto_1_12_2::Proto1_12_2;
 use proto_26_2::Proto26_2;
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::window::{Window, WindowId};
 
-/// Doi so dong lenh cho CasxDuois.exe (Hybrid Single-Binary)
+/// Command-line arguments for CasxDuois.
 #[derive(Parser, Debug, Clone, PartialEq)]
-#[command(name = "CasxDuois", version = "0.1.0", about = "CasxDuois Multiplayer-Only Client Engine")]
+#[command(
+    name = "CasxDuois",
+    version = "0.1.0",
+    about = "CasxDuois Multiplayer-Only Client Engine"
+)]
 pub struct CasxCliArgs {
-    /// Che do van hanh: "client" (3D co giao dien) hoac "afk" (Headless Eco-AFK < 15MB RAM)
+    /// Runtime mode: "client" (graphical 3D client) or "afk" (headless Eco-AFK runner)
     #[arg(short, long, default_value = "client")]
     pub mode: String,
 
-    /// Phien ban giao thuc: "340" (1.12.2) hoac "776" (26.2) hoac "auto"
+    /// Protocol version: "340" (1.12.2), "776" (26.2), or "auto"
     #[arg(long, default_value = "340")]
     pub ver: String,
 
-    /// Dia chi may chu dang host:port (vi du: aemine.net:25565 hoac 127.0.0.1:25565)
+    /// Target server address (host:port, e.g. 127.0.0.1:25565)
     #[arg(short, long)]
     pub server: Option<String>,
 
-    /// Ten nguoi choi hoac nickname bot
+    /// Player username or offline nickname
     #[arg(short, long)]
     pub nick: Option<String>,
 
-    /// Co tuong thich nguoc cho che do headless afk
+    /// Backward compatibility flag for headless AFK mode
     #[arg(long)]
     pub headless_afk: bool,
+
+    /// Smoke test flag to run headless simulation ticks and exit
+    #[arg(long)]
+    pub smoke_test: bool,
 }
 
-/// May trang thai van hanh cua Engine
+/// Client operating state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineStage {
-    /// Man hinh khoi dong / Sanh cho HoYoPlay Hub & Legacy Launcher
+    /// Initial launcher viewport
     Launcher,
-    /// Dang tai tai nguyen va ghep TextureAtlas len GPU
+    /// Loading textures and allocating GPU atlas
     LoadingAssets,
-    /// Dang trong the gioi 3D Voxel thuc te (Render 5 Pass + 20 TPS Physics)
+    /// Active 3D voxel world simulation and rendering
     InGame,
 }
 
@@ -73,7 +86,6 @@ pub struct ClientApp {
     pub in_game: bool,
     pub ping_ms: u32,
 
-    // Cac thanh phan nang cao Giai doan 2 & 5
     pub atlas: TextureAtlas,
     pub world_storage: WorldStorage,
     pub sim: PlayerSimulation,
@@ -91,7 +103,7 @@ impl Default for ClientApp {
 
 impl ClientApp {
     pub fn new() -> Self {
-        println!("[INFO] [casx_client::init] Khoi tao CasxDuois Client Engine (Multiplayer-Only State-Driven Terminal)");
+        info!(target: "casx_client::init", "Initializing CasxDuois Client Engine v{}", env!("CARGO_PKG_VERSION"));
 
         let telemetry = PlatformTelemetry::default();
         let timer = HighResolutionTimer::new(60);
@@ -109,9 +121,9 @@ impl ClientApp {
         let world_storage = WorldStorage::new();
         let sim = PlayerSimulation::new(DVec3::new(0.0, 64.0, 0.0));
 
-        println!("[INFO] [casx_client::init] Tong dung luong RAM vat ly: {} MB", telemetry.total_memory_mb());
-        println!("[INFO] [casx_client::init] Phien ban khoi dong mac dinh: {:?}", active_protocol.version());
-        println!("[INFO] [casx_client::init] TextureAtlas san sang (Kich thuoc: {}x{})", atlas.width, atlas.height);
+        info!(target: "casx_client::sys", "Detected system physical memory: {} MiB", telemetry.total_memory_mb());
+        info!(target: "casx_client::init", "Default protocol target: 1.12.2 (v340)");
+        info!(target: "casx_render::atlas", "Allocated CPU atlas buffer ({}x{})", atlas.width, atlas.height);
 
         Self {
             stage: EngineStage::Launcher,
@@ -137,9 +149,9 @@ impl ClientApp {
         }
     }
 
-    /// Chuyen doi nong (Hot-Switch trong 0ms) giua phien ban 1.12.2 va 26.2
+    /// Switches protocol adapter version.
     pub fn switch_protocol_version(&mut self, version: GameVersion) {
-        println!("[INFO] [casx_client::switch] Chuyen doi giao thuc sang: {:?}", version);
+        info!(target: "casx_client::switch", "Switching protocol adapter to: {:?}", version);
         match version {
             GameVersion::V1_12_2 => {
                 self.active_protocol = Box::new(Proto1_12_2::new());
@@ -150,16 +162,14 @@ impl ClientApp {
         }
     }
 
-    /// Tinh toan toa do Camera noi suy giua 2 tick vat ly 20 TPS
-    ///
-    /// Cong thuc:
+    /// Computes interpolated camera position between physics ticks:
     /// $$\vec{P}_{\text{render}} = \vec{P}_{\text{prev}} + \left(\vec{P}_{\text{curr}} - \vec{P}_{\text{prev}}\right) \times \alpha$$
     pub fn get_interpolated_render_pos(&self) -> DVec3 {
         let alpha = (self.accumulator / 0.05).clamp(0.0, 1.0);
         self.prev_tick_pos.lerp(&self.sim.pos, alpha)
     }
 
-    /// Thuc thi mot chu ky vong lap chinh (Tick vat ly + do FPS + Accumulator 20 TPS)
+    /// Executes single main engine update tick.
     pub fn update_tick(&mut self) {
         let delta = self.timer.tick_frame();
         self.telemetry.poll_updates();
@@ -167,25 +177,33 @@ impl ClientApp {
         if self.in_game {
             self.accumulator += delta;
 
-            // Bo tich luy thoi gian co dinh 20 TPS (50ms / tick)
             while self.accumulator >= 0.05 {
                 self.prev_tick_pos = self.sim.pos;
 
-                // 1. Chay mo phong vat ly nguoi choi trong casx-sim
                 self.sim.tick(&self.world_storage);
 
-                // 2. Dong bo sang LocalPlayerPhysics cua casx-core
                 self.physics.step_physics_tick(
                     &self.world,
-                    if self.ui.key_w { 1.0 } else if self.ui.key_s { -1.0 } else { 0.0 },
-                    if self.ui.key_d { 1.0 } else if self.ui.key_a { -1.0 } else { 0.0 },
+                    if self.ui.key_w {
+                        1.0
+                    } else if self.ui.key_s {
+                        -1.0
+                    } else {
+                        0.0
+                    },
+                    if self.ui.key_d {
+                        1.0
+                    } else if self.ui.key_a {
+                        -1.0
+                    } else {
+                        0.0
+                    },
                     self.ui.key_space,
                 );
 
                 self.accumulator -= 0.05;
             }
 
-            // 3. Do tia Voxel DDA tu mat camera (chieu cao mat = pos.y + 1.62m)
             let eye_pos = DVec3::new(self.sim.pos.x, self.sim.pos.y + 1.62, self.sim.pos.z);
             let yaw_rad = (self.sim.yaw as f64).to_radians();
             let pitch_rad = (self.sim.pitch as f64).to_radians();
@@ -197,15 +215,18 @@ impl ClientApp {
 
             self.target_block = raycast_world(&self.world_storage, eye_pos, look_dir, 4.5);
             if let Some(ref hit) = self.target_block {
-                self.pipeline.set_targeted_block_outline(Some(casx_core::physics::Aabb::from_block(
-                    glam::IVec3::new(hit.block_pos.x, hit.block_pos.y, hit.block_pos.z),
-                )));
+                self.pipeline.set_targeted_block_outline(Some(
+                    casx_core::physics::Aabb::from_block(glam::IVec3::new(
+                        hit.block_pos.x,
+                        hit.block_pos.y,
+                        hit.block_pos.z,
+                    )),
+                ));
             } else {
                 self.pipeline.set_targeted_block_outline(None);
             }
         }
 
-        // Dong bo hoa trang thai vao ctl_server de phan hoi JSON-RPC
         if let Ok(mut state) = self.ctl_server.state.lock() {
             state.in_game = self.in_game;
             state.fps = self.timer.average_fps();
@@ -214,23 +235,28 @@ impl ClientApp {
             state.player_pos = [self.sim.pos.x, self.sim.pos.y, self.sim.pos.z];
         }
 
-        // Canh bao neu thoi gian khung hinh vuot qua ngan sach 16.66 ms (60 FPS)
         let delta_ms = delta * 1000.0;
         if delta_ms > 16.66 && self.in_game {
-            log::warn!("[casx_client::loop] Khung hinh vuot qua ngan sach: {:.2} ms", delta_ms);
+            warn!(target: "casx_client::loop", "Frame time exceeded target budget: {:.2} ms", delta_ms);
         }
     }
 
-    /// Xu ly hanh dong tu UI (Chuyen doi sanh cho -> Vao game)
+    /// Dispatches UI actions.
     pub fn handle_ui_action(&mut self, action: UiAction) {
         match action {
             UiAction::SwitchVersion(ver) => {
                 self.switch_protocol_version(ver);
                 self.launcher.profile_manager.switch_active_version(ver);
             }
-            UiAction::ConnectServer { host, port, username, version } => {
-                println!(
-                    "[INFO] [casx_client::net] Bat dau ket noi toi {}:{} voi username: {} (Phien ban: {:?})",
+            UiAction::ConnectServer {
+                host,
+                port,
+                username,
+                version,
+            } => {
+                info!(
+                    target: "casx_client::net",
+                    "Connecting to {}:{} as '{}' (protocol: {:?})",
                     host, port, username, version
                 );
                 self.switch_protocol_version(version);
@@ -240,34 +266,85 @@ impl ClientApp {
                 self.session_v340 = Some(SessionV340::new(&username));
             }
             UiAction::Disconnect => {
-                println!("[INFO] [casx_client::net] Ngat ket noi, quay ve sanh cho HoYoPlay Hub");
+                info!(target: "casx_client::net", "Disconnected from server, returning to launcher");
                 self.in_game = false;
                 self.stage = EngineStage::Launcher;
                 self.ui.screen_mode = ScreenMode::Hub;
                 self.session_v340 = None;
             }
             UiAction::SendChatMessage(msg) => {
-                println!("[INFO] [casx_client::chat] Gui tin nhan chat: {}", msg);
+                debug!(target: "casx_client::chat", "Outgoing chat message: {}", msg);
             }
             UiAction::SelectHotbarSlot(slot) => {
-                println!("[INFO] [casx_client::hotbar] Chon o hotbar: {}", slot);
+                debug!(target: "casx_client::hotbar", "Selected hotbar slot: {}", slot);
                 self.ui.selected_hotbar_slot = slot;
             }
             UiAction::None => {}
         }
     }
 
-    /// Khoi chay phien game truc tiep tu cau hinh LauncherState (In-Window Morphing)
+    /// Launches session from launcher profile configuration.
     pub fn launch_from_launcher(&mut self) {
         let target = self.launcher.build_launch_target();
         match target {
-            LaunchTarget::NormalClient { host, port, username, version } => {
-                self.handle_ui_action(UiAction::ConnectServer { host, port, username, version });
+            LaunchTarget::NormalClient {
+                host,
+                port,
+                username,
+                version,
+            } => {
+                self.handle_ui_action(UiAction::ConnectServer {
+                    host,
+                    port,
+                    username,
+                    version,
+                });
             }
             LaunchTarget::EcoAfk { .. } => {
                 let session_id = self.launcher.spawn_afk_bot_from_current_selection();
-                println!("[INFO] [casx_client::afk] Khoi chay bot Eco-AFK chay ngam voi ID: {}", session_id);
+                info!(target: "casx_client::afk", "Spawned background Eco-AFK session ID: {}", session_id);
             }
+        }
+    }
+}
+
+/// Runner managing the winit application lifecycle.
+struct AppRunner {
+    client: ClientApp,
+    window: Option<Window>,
+}
+
+impl ApplicationHandler for AppRunner {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_none() {
+            let window_attributes = Window::default_attributes()
+                .with_title("CasxDuois Client Engine")
+                .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
+            match event_loop.create_window(window_attributes) {
+                Ok(w) => {
+                    info!(target: "casx_client::window", "Created primary window ({}x{})", 1280, 720);
+                    self.window = Some(w);
+                }
+                Err(e) => {
+                    error!(target: "casx_client::window", "Failed to create primary window: {:?}", e);
+                }
+            }
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => {
+                info!(target: "casx_client::window", "Close requested, terminating event loop");
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => {
+                self.client.update_tick();
+                if let Some(w) = self.window.as_ref() {
+                    w.request_redraw();
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -275,59 +352,74 @@ impl ClientApp {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    // Phan tich tham so dong lenh CLI (Hybrid Single-Binary)
     let args = CasxCliArgs::parse();
 
-    // Che do 2: Subprocess Spawn Eco-AFK (Headless runner < 15MB RAM)
     if args.mode == "afk" || args.headless_afk {
         let host = args.server.unwrap_or_else(|| "127.0.0.1:25565".to_string());
         let nick = args.nick.unwrap_or_else(|| "EcoBot".to_string());
-        println!(
-            "[INFO] [casx_client::afk] Khoi chay tien trinh con Eco-AFK Headless (Server: {}, Nick: {}, Ver: {})",
+        info!(
+            target: "casx_client::afk",
+            "Starting headless Eco-AFK session (server: {}, nick: {}, ver: {})",
             host, nick, args.ver
         );
 
-        // Vong lap headless 20 TPS mo phong (tiet kiem RAM < 15MB)
         let world = WorldStorage::new();
         let mut sim = PlayerSimulation::new(DVec3::new(0.0, 64.0, 0.0));
         for _ in 0..10 {
             sim.tick(&world);
         }
-        println!("[INFO] [casx_client::afk] Hoan tat chu ky test Eco-AFK bot, thoat tien trinh.");
+        info!(target: "casx_client::afk", "Headless Eco-AFK test cycle completed");
         return;
     }
 
-    // Che do 1: 3D Client (In-Window Morphing hoac Ket noi thang qua CLI)
     let mut app = ClientApp::new();
 
     if let Some(srv) = args.server {
         let nick = args.nick.unwrap_or_else(|| "CasxPlayer".to_string());
-        let ver = if args.ver == "776" { GameVersion::V26_2 } else { GameVersion::V1_12_2 };
+        let ver = if args.ver == "776" {
+            GameVersion::V26_2
+        } else {
+            GameVersion::V1_12_2
+        };
         let parts: Vec<&str> = srv.split(':').collect();
         let host = parts.first().unwrap_or(&"127.0.0.1").to_string();
-        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(25565);
+        let port = parts
+            .get(1)
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(25565);
 
-        println!("[INFO] [casx_client::cli] Khoi chay ket noi truc tiep toi {}:{}", host, port);
+        info!(target: "casx_client::cli", "Direct connection requested to {}:{}", host, port);
         app.handle_ui_action(UiAction::ConnectServer {
             host,
             port,
             username: nick,
             version: ver,
         });
-    } else {
-        println!("[INFO] [casx_client::main] Khoi chay thanh cong Client Engine!");
-        println!("[INFO] [casx_client::main] Sanh cho HoYoPlay Hub da san sang tren do phan giai goc.");
     }
 
-    // Chay gia lap 5 chu ky vong lap chinh de kiem tra do on dinh
-    for _ in 0..5 {
-        app.update_tick();
+    if args.smoke_test {
+        for _ in 0..5 {
+            app.update_tick();
+        }
+        info!(target: "casx_client::smoke", "Headless smoke test completed successfully");
+        return;
     }
 
-    println!(
-        "[INFO] [casx_client::main] Kiem tra thanh cong vong lap Engine. FPS do duoc: {:.0}",
-        app.timer.average_fps()
-    );
+    match EventLoop::new() {
+        Ok(event_loop) => {
+            let mut runner = AppRunner {
+                client: app,
+                window: None,
+            };
+            let _ = event_loop.run_app(&mut runner);
+        }
+        Err(e) => {
+            warn!(target: "casx_client::window", "Headless environment detected ({:?}), running tick fallback", e);
+            for _ in 0..5 {
+                app.update_tick();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -341,11 +433,9 @@ mod tests {
         assert!(!app.in_game);
         assert_eq!(app.stage, EngineStage::Launcher);
 
-        // Kiem tra Hot-Switch sang 26.2
         app.handle_ui_action(UiAction::SwitchVersion(GameVersion::V26_2));
         assert_eq!(app.active_protocol.version(), GameVersion::V26_2);
 
-        // Kiem tra gia lap ket noi Server
         app.handle_ui_action(UiAction::ConnectServer {
             host: "127.0.0.1".to_string(),
             port: 25565,
@@ -356,12 +446,10 @@ mod tests {
         assert_eq!(app.stage, EngineStage::InGame);
         assert_eq!(app.ui.screen_mode, ScreenMode::InGame);
 
-        // Chay 3 ticks vat ly trong game
         for _ in 0..3 {
             app.update_tick();
         }
 
-        // Kiem tra noi suy camera
         let render_pos = app.get_interpolated_render_pos();
         assert!(render_pos.y <= 64.0);
     }
@@ -371,13 +459,11 @@ mod tests {
         let mut app = ClientApp::new();
         assert_eq!(app.stage, EngineStage::Launcher);
 
-        // Khoi chay truc tiep tu Launcher (In-Window Morphing)
         app.launch_from_launcher();
         assert_eq!(app.stage, EngineStage::InGame);
         assert!(app.in_game);
         assert_eq!(app.ui.screen_mode, ScreenMode::InGame);
 
-        // Quay lai Launcher va kich hoat che do Eco-AFK
         app.handle_ui_action(UiAction::Disconnect);
         assert_eq!(app.stage, EngineStage::Launcher);
         assert!(!app.in_game);
@@ -390,14 +476,12 @@ mod tests {
 
     #[test]
     fn test_cli_args_parsing() {
-        // Test mac dinh
-        let args_default = CasxCliArgs::parse_from(&["CasxDuois"]);
+        let args_default = CasxCliArgs::parse_from(["CasxDuois"]);
         assert_eq!(args_default.mode, "client");
         assert_eq!(args_default.ver, "340");
         assert!(args_default.server.is_none());
 
-        // Test Eco-AFK mode voi 26.2
-        let args_afk = CasxCliArgs::parse_from(&[
+        let args_afk = CasxCliArgs::parse_from([
             "CasxDuois",
             "--mode",
             "afk",

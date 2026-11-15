@@ -1,10 +1,10 @@
 // crates/casx_net/tests/test_v776_session.rs
-// Kiem thu tich hop luong phien Minecraft 26.2 (Protocol 776 / Configuration Phase)
+// Integration test for Minecraft 26.2 (Protocol 776 / Configuration Phase) session flow
 
 use bytes::BytesMut;
-use casx_net::session::v776::{SessionEventV776, SessionStateV776, SessionV776};
 use casx_net::codec::frame::RawPacket;
 use casx_net::codec::varint::write_varint_to_buf;
+use casx_net::session::v776::{SessionEventV776, SessionStateV776, SessionV776};
 
 #[test]
 fn test_v776_full_login_configuration_and_play_transition() {
@@ -14,7 +14,7 @@ fn test_v776_full_login_configuration_and_play_transition() {
     assert_eq!(session.state, SessionStateV776::Login);
     session.outgoing_buffer.clear();
 
-    // 1. Server gui Set Compression (0x03) threshold = 256
+    // 1. Server sends Set Compression (0x03) threshold = 256
     let mut comp_payload = BytesMut::new();
     write_varint_to_buf(256, &mut comp_payload);
     let comp_packet = RawPacket::new(0x03, comp_payload.freeze());
@@ -24,7 +24,7 @@ fn test_v776_full_login_configuration_and_play_transition() {
     let _ = session.process_incoming_bytes(&server_bytes).unwrap();
     assert!(session.compressor.is_some());
 
-    // 2. Server gui Login Success (0x02) qua bo nen
+    // 2. Server sends Login Success (0x02) compressed
     let mut login_succ_payload = BytesMut::new();
     let uuid_bytes = [1u8; 16];
     login_succ_payload.extend_from_slice(&uuid_bytes);
@@ -34,7 +34,12 @@ fn test_v776_full_login_configuration_and_play_transition() {
 
     let login_succ_packet = RawPacket::new(0x02, login_succ_payload.freeze());
     let mut server_bytes2 = BytesMut::new();
-    session.compressor.as_ref().unwrap().compress_packet(&login_succ_packet, &mut server_bytes2).unwrap();
+    session
+        .compressor
+        .as_ref()
+        .unwrap()
+        .compress_packet(&login_succ_packet, &mut server_bytes2)
+        .unwrap();
 
     let events = session.process_incoming_bytes(&server_bytes2).unwrap();
     assert_eq!(events.len(), 1);
@@ -43,17 +48,22 @@ fn test_v776_full_login_configuration_and_play_transition() {
         _ => panic!("Expected LoginSuccess"),
     }
 
-    // Xac nhan da tu dong chuyen sang Configuration
+    // Verify automatic transition to Configuration state
     assert_eq!(session.state, SessionStateV776::Configuration);
 
-    // Kiem tra buffer co chua Login Acknowledged (0x03) va Client Information (0x00)
+    // Verify outbound buffer has Login Acknowledged (0x03) and Client Information (0x00)
     assert!(!session.outgoing_buffer.is_empty());
     session.outgoing_buffer.clear();
 
-    // 3. Server gui Registry Data (0x07) trong Configuration
+    // 3. Server sends Registry Data (0x07) in Configuration
     let reg_packet = RawPacket::new(0x07, bytes::Bytes::new());
     let mut server_bytes3 = BytesMut::new();
-    session.compressor.as_ref().unwrap().compress_packet(&reg_packet, &mut server_bytes3).unwrap();
+    session
+        .compressor
+        .as_ref()
+        .unwrap()
+        .compress_packet(&reg_packet, &mut server_bytes3)
+        .unwrap();
 
     let events3 = session.process_incoming_bytes(&server_bytes3).unwrap();
     assert_eq!(events3.len(), 1);
@@ -65,10 +75,15 @@ fn test_v776_full_login_configuration_and_play_transition() {
         _ => panic!("Expected DimensionRegistryReceived"),
     }
 
-    // 4. Server gui Finish Configuration (0x03)
+    // 4. Server sends Finish Configuration (0x03)
     let finish_packet = RawPacket::new(0x03, bytes::Bytes::new());
     let mut server_bytes4 = BytesMut::new();
-    session.compressor.as_ref().unwrap().compress_packet(&finish_packet, &mut server_bytes4).unwrap();
+    session
+        .compressor
+        .as_ref()
+        .unwrap()
+        .compress_packet(&finish_packet, &mut server_bytes4)
+        .unwrap();
 
     let events4 = session.process_incoming_bytes(&server_bytes4).unwrap();
     assert_eq!(events4.len(), 1);
@@ -77,9 +92,9 @@ fn test_v776_full_login_configuration_and_play_transition() {
         _ => panic!("Expected ConfigurationFinished"),
     }
 
-    // Xac nhan da chuyen thanh cong sang Play
+    // Verify successful transition to Play
     assert_eq!(session.state, SessionStateV776::Play);
 
-    // Kiem tra Client da gui Acknowledge Finish Configuration (0x03)
+    // Verify client sent Acknowledge Finish Configuration (0x03)
     assert!(!session.outgoing_buffer.is_empty());
 }

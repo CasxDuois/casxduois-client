@@ -1,18 +1,18 @@
-//! Crate `casx_render` (Tang 3C trong do thi phu thuoc DAG).
+//! Chunk meshing, packed vertex layout, frustum culling, and wgpu rendering pipelines.
 //!
-//! Trach nhiem:
-//! - Dinh nen 64-bit (`PackedVertex`) tiet kiem 83.3% bang thong VRAM.
-//! - Thuat toan 6-Face Greedy Meshing da luong (`rayon`) kem Voxel Ambient Occlusion.
-//! - Cat tam nhin 6 mat phang (`Frustum`).
-//! - Shader WGSL to bong huong va hau ky Dual-Filter Kawase Blur.
+//! Features:
+//! - 64-bit packed vertex layout (`PackedVertex`) minimizing VRAM bandwidth.
+//! - Multithreaded 6-Face Greedy Meshing (`rayon`) with Voxel Ambient Occlusion.
+//! - 6-plane View-Frustum Culling (`Frustum`).
+//! - WGSL shaders with directional shading and post-process Dual-Filter Kawase Blur.
 
-pub mod vertex;
 pub mod frustum;
-pub mod mesher;
-pub mod shader;
-pub mod kawase;
 pub mod indirect;
+pub mod kawase;
+pub mod mesher;
 pub mod pipeline;
+pub mod shader;
+pub mod vertex;
 
 pub use frustum::{Frustum, Plane};
 pub use indirect::{DrawIndexedIndirectArgs, IndirectBatchManager};

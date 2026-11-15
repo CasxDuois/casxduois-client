@@ -1,25 +1,20 @@
-//! Quan ly ho so nguoi choi (Profiles), loai tai khoan va cau hinh phan bo RAM.
+//! Player profile, authentication type, and memory allocation management.
 
 use casx_core::crypto::{format_uuid, generate_offline_uuid};
 use casx_core::GameVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Kieu tai khoan xac thuc
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Authentication account type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AccountType {
+    #[default]
     Offline,
     ElyBy,
     Microsoft,
 }
 
-impl Default for AccountType {
-    fn default() -> Self {
-        Self::Offline
-    }
-}
-
-/// Ho so nguoi choi hoan chinh
+/// Complete player profile
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlayerProfile {
     pub uuid: String,
@@ -32,7 +27,7 @@ pub struct PlayerProfile {
 }
 
 impl PlayerProfile {
-    /// Tao ho so Offline voi UUID sinh chuan tu ten nguoi choi
+    /// Creates offline profile with deterministically generated UUID from username
     pub fn new_offline(username: &str) -> Self {
         let uuid = format_uuid(generate_offline_uuid(username));
         Self {
@@ -47,7 +42,7 @@ impl PlayerProfile {
     }
 }
 
-/// Trinh quan ly danh sach ho so nguoi choi
+/// Player profile manager
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileManager {
     pub active_profile_uuid: String,
@@ -73,24 +68,24 @@ impl ProfileManager {
         Self::default()
     }
 
-    /// Lay ho so nguoi choi hien tai dang duoc chon
+    /// Retrieves currently selected player profile
     pub fn get_active_profile(&self) -> Option<&PlayerProfile> {
         self.profiles.get(&self.active_profile_uuid)
     }
 
-    /// Lay ho so nguoi choi hien tai dang duoc chon de chinh sua
+    /// Retrieves currently selected player profile for mutation
     pub fn get_active_profile_mut(&mut self) -> Option<&mut PlayerProfile> {
         self.profiles.get_mut(&self.active_profile_uuid)
     }
 
-    /// Them mot ho so nguoi choi moi
+    /// Adds a new player profile
     pub fn add_profile(&mut self, profile: PlayerProfile) {
         let uuid = profile.uuid.clone();
         self.profiles.insert(uuid.clone(), profile);
         self.active_profile_uuid = uuid;
     }
 
-    /// Chon ho so nguoi choi theo UUID
+    /// Selects player profile by UUID
     pub fn select_profile(&mut self, uuid: &str) -> bool {
         if self.profiles.contains_key(uuid) {
             self.active_profile_uuid = uuid.to_string();
@@ -100,7 +95,7 @@ impl ProfileManager {
         }
     }
 
-    /// Chuyen doi nhanh phien ban cua ho so hien tai
+    /// Switches active version of current profile.
     pub fn switch_active_version(&mut self, version: GameVersion) {
         if let Some(prof) = self.get_active_profile_mut() {
             prof.selected_version = version;

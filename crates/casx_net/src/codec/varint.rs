@@ -1,5 +1,5 @@
 // crates/casx_net/src/codec/varint.rs
-// Doc ghi VarInt / VarLong bat dong bo va dong bo
+// Asynchronous and synchronous VarInt / VarLong read/write codec
 
 use bytes::{Buf, BufMut, BytesMut};
 use casx_core::ProtocolError;
@@ -24,7 +24,7 @@ pub fn read_varint_from_buf(src: &mut BytesMut) -> Result<Option<i32>, ProtocolE
         }
     }
 
-    // Chua du byte trong buffer
+    // Insufficient bytes in buffer
     Ok(None)
 }
 

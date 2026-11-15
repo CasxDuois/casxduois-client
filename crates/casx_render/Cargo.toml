@@ -2,7 +2,7 @@
 name = "casx_render"
 version = "0.1.0"
 edition = "2021"
-description = "High-performance voxel graphics engine with 6-face greedy mesher, AO, frustum culling, and Kawase blur using wgpu (Layer 3C)"
+description = "wgpu rendering pipeline, frustum culling, and chunk meshing."
 
 [dependencies]
 casx_core = { workspace = true }

@@ -1,5 +1,8 @@
-//! Crate `casx-world`: Quan ly luu tru dia hinh Voxel Chunk, Palette va cap nhat khoi Minecraft.
+//! Crate `casx-world`: Chunk section storage, paletted containers, and lighting buffers.
 
 pub mod region;
 
-pub use region::{ChunkColumn, ChunkColumnV340, ChunkSection, ChunkSectionV340, SectionData, WorldError, WorldStorage};
+pub use region::{
+    ChunkColumn, ChunkColumnV340, ChunkSection, ChunkSectionV340, SectionData, WorldError,
+    WorldStorage,
+};

@@ -1,4 +1,4 @@
-//! Ma nguon Shader WGSL giai nen dinh 64-bit va to bong khoi Voxel theo chieu huong va AO.
+//! WGSL shader source for unpacking 64-bit vertices, directional shading, and Ambient Occlusion.
 
 pub const VOXEL_SHADER_WGSL: &str = r#"
 struct CameraUniform {
@@ -30,7 +30,7 @@ struct VertexOutput {
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    // Giai ma vi tri XYZ tu data0 (5 bits moi truc)
+    // Decode XYZ position from data0 (5 bits per axis)
     let x = f32((in.data0 >> 27u) & 0x1Fu);
     let y = f32((in.data0 >> 22u) & 0x1Fu);
     let z = f32((in.data0 >> 17u) & 0x1Fu);
@@ -49,7 +49,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.uv = vec2<f32>(u_coord, v_coord);
     out.texture_layer = tex_layer;
 
-    // Tinh he so chieu sang theo huong mat (Directional Shading)
+    // Compute face directional shading factor
     var face_shade = 0.8;
     if (face_idx == 1u) {
         face_shade = 1.0; // Top
@@ -59,10 +59,10 @@ fn vs_main(in: VertexInput) -> VertexOutput {
         face_shade = 0.6; // East / West
     }
 
-    // He so Ambient Occlusion: ao in [0..3] -> multiplier in [0.45..1.0]
+    // Ambient Occlusion factor: ao in [0..3] -> multiplier in [0.45..1.0]
     let ao_factor = 0.45 + (ao * 0.183);
 
-    // Ket hop anh sang Block va Sky light
+    // Combine block and sky light
     let light_level = max(block_light / 15.0, (sky_light / 15.0) * 0.95);
     let final_intensity = face_shade * ao_factor * max(0.08, light_level);
 

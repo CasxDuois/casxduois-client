@@ -1,4 +1,4 @@
-//! Shader va bo loc hau ky Dual-Filter Kawase Blur cho Lunar Overlay va HoYoPlay Hub.
+//! Dual-filter Kawase blur post-processing shader for UI overlays.
 
 pub const KAWASE_BLUR_WGSL: &str = r#"
 @group(0) @binding(0)

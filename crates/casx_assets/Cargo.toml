@@ -2,6 +2,7 @@
 name = "casx-assets"
 version = "0.1.0"
 edition = "2021"
+description = "Local Minecraft asset index resolver and texture atlas packer."
 
 [dependencies]
 casx_core = { workspace = true }

@@ -1,9 +1,9 @@
-//! Cat tam nhin 6 mat phang (View-Frustum Culling) giam tai draw calls cho GPU.
+//! 6-plane View-Frustum Culling to minimize GPU draw calls.
 
 use casx_core::physics::Aabb;
 use glam::{Mat4, Vec3, Vec4};
 
-/// Mat phang trong khong gian 3D bieu dien bang phuong trinh $Ax + By + Cz + D = 0$
+/// 3D space plane represented by equation $Ax + By + Cz + D = 0$
 #[derive(Debug, Clone, Copy)]
 pub struct Plane {
     pub normal: Vec3,
@@ -28,20 +28,20 @@ impl Plane {
         }
     }
 
-    /// Tinh khoang cach co dau tu mot diem toi mat phang
+    /// Computes signed distance from a point to the plane
     pub fn distance_to_point(&self, point: Vec3) -> f32 {
         self.normal.dot(point) + self.d
     }
 }
 
-/// Hinh chop tam nhin chua 6 mat phang (Left, Right, Bottom, Top, Near, Far)
+/// View frustum containing 6 bounding planes (Left, Right, Bottom, Top, Near, Far)
 #[derive(Debug, Clone, Copy)]
 pub struct Frustum {
     pub planes: [Plane; 6],
 }
 
 impl Frustum {
-    /// Trich xuat 6 mat phang tu ma tran View-Projection
+    /// Extracts 6 frustum planes from View-Projection matrix
     pub fn from_view_projection(vp: Mat4) -> Self {
         let cols = vp.to_cols_array_2d();
         let r0 = Vec4::new(cols[0][0], cols[1][0], cols[2][0], cols[3][0]);
@@ -61,13 +61,13 @@ impl Frustum {
         Self { planes }
     }
 
-    /// Kiem tra hop bao AABB co nam trong hoac giao cat voi Frustum hay khong
+    /// Checks if an AABB bounding box is inside or intersects the frustum.
     pub fn intersects_aabb(&self, aabb: &Aabb) -> bool {
         let min = Vec3::new(aabb.min.x as f32, aabb.min.y as f32, aabb.min.z as f32);
         let max = Vec3::new(aabb.max.x as f32, aabb.max.y as f32, aabb.max.z as f32);
 
         for plane in &self.planes {
-            // Chon dinh nam xa nhat theo huong phap tuyen cua mat phang (Positive Vertex)
+            // Select the positive vertex along plane normal
             let p = Vec3::new(
                 if plane.normal.x > 0.0 { max.x } else { min.x },
                 if plane.normal.y > 0.0 { max.y } else { min.y },
@@ -75,7 +75,7 @@ impl Frustum {
             );
 
             if plane.distance_to_point(p) < 0.0 {
-                // Toan bo hop bao nam hoan toan ben ngoai mat phang nay
+                // Entire box is outside this plane
                 return false;
             }
         }
@@ -100,12 +100,18 @@ mod tests {
 
         let frustum = Frustum::from_view_projection(vp);
 
-        // Hop bao o phia truoc tam nhin
+        // Box directly in front of camera
         let inside_box = Aabb::new(DVec3::new(-1.0, -1.0, -20.0), DVec3::new(1.0, 1.0, -18.0));
-        assert!(frustum.intersects_aabb(&inside_box), "Hop bao phia truoc phai nam trong Frustum");
+        assert!(
+            frustum.intersects_aabb(&inside_box),
+            "Front box must be inside Frustum"
+        );
 
-        // Hop bao o phia sau lung tam nhin
+        // Box behind camera
         let behind_box = Aabb::new(DVec3::new(-1.0, -1.0, 5.0), DVec3::new(1.0, 1.0, 10.0));
-        assert!(!frustum.intersects_aabb(&behind_box), "Hop bao sau lung phai bi loai bo boi Frustum Culling");
+        assert!(
+            !frustum.intersects_aabb(&behind_box),
+            "Behind box must be culled by Frustum"
+        );
     }
 }

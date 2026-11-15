@@ -1,8 +1,8 @@
-//! He thong Native Rust Mods cho CasxDuois Client (Freelook 360, Smooth Zoom va 12 Hook Points).
+//! Native Rust mods system for CasxDuois client engine.
 
 use glam::DVec3;
 
-/// Boi canh duoc truyen vao cac Native Rust Mods tai moi khung hinh hoac moi tick
+/// Context passed into native mods each frame or tick
 pub struct HookContext<'a> {
     pub player_pos: DVec3,
     pub server_yaw: f32,
@@ -14,18 +14,18 @@ pub struct HookContext<'a> {
     pub is_zoom_held: bool,
 }
 
-/// Trait tieu chuan cho moi Native Rust Mod (thay the Java Mixin voi chi phi zero-overhead)
+/// Standard trait for native Rust mods
 pub trait CasxNativeMod: Send + Sync {
     fn mod_id(&self) -> &'static str;
     fn display_name(&self) -> &'static str;
     fn is_enabled(&self) -> bool;
     fn set_enabled(&mut self, enabled: bool);
 
-    /// Hook can thiep vao goc xoay va tam nhin camera truoc khi tinh ma tran View/Projection
+    /// Hook intervening in camera rotation and FOV before View/Projection matrix calculation
     fn on_camera_update(&mut self, _ctx: &mut HookContext<'_>) {}
 }
 
-/// Mod 1: Freelook 360 (Giu phim Alt xoay camera tu do ma khong lam thay doi goc nhin gui len Server)
+/// Mod 1: Freelook 360 (Hold Alt to rotate camera freely without changing server view angles)
 pub struct FreelookMod {
     pub enabled: bool,
     pub free_yaw: f32,
@@ -46,11 +46,11 @@ impl Default for FreelookMod {
 
 impl CasxNativeMod for FreelookMod {
     fn mod_id(&self) -> &'static str {
-        "lunar_freelook"
+        "freelook"
     }
 
     fn display_name(&self) -> &'static str {
-        "Freelook 360 (Giu Alt)"
+        "Freelook 360 (Hold Alt)"
     }
 
     fn is_enabled(&self) -> bool {
@@ -81,7 +81,7 @@ impl CasxNativeMod for FreelookMod {
     }
 }
 
-/// Mod 2: Smooth Zoom (Thu phong goc nhin FOV muot ma khi giu phim C)
+/// Mod 2: Smooth Zoom (Smooth FOV interpolation when holding C)
 pub struct SmoothZoomMod {
     pub enabled: bool,
     pub target_zoom_fov: f32,
@@ -100,11 +100,11 @@ impl Default for SmoothZoomMod {
 
 impl CasxNativeMod for SmoothZoomMod {
     fn mod_id(&self) -> &'static str {
-        "lunar_smooth_zoom"
+        "smooth_zoom"
     }
 
     fn display_name(&self) -> &'static str {
-        "Smooth Zoom (Giu C)"
+        "Smooth Zoom (Hold C)"
     }
 
     fn is_enabled(&self) -> bool {
@@ -125,13 +125,13 @@ impl CasxNativeMod for SmoothZoomMod {
         } else {
             1.0
         };
-        // Noi suy muot ham mu (Exponential Smoothing)
+        // Exponential smoothing interpolation
         self.current_multiplier += (goal - self.current_multiplier) * 0.25;
         *ctx.render_fov = base_fov * self.current_multiplier;
     }
 }
 
-/// Bo quan ly tap trung cac Native Rust Mods
+/// Central manager for native Rust mods
 pub struct ModManager {
     mods: Vec<Box<dyn CasxNativeMod>>,
 }
@@ -181,7 +181,7 @@ mod tests {
         freelook.free_yaw = 180.0;
         freelook.free_pitch = -30.0;
 
-        // Khi giu Alt, render_yaw phai bang free_yaw trong khi server_yaw = 0.0
+        // When Alt is held, render_yaw equals free_yaw while server_yaw = 0.0
         let mut ctx = HookContext {
             player_pos: DVec3::ZERO,
             server_yaw: 0.0,
@@ -194,13 +194,13 @@ mod tests {
         };
 
         freelook.on_camera_update(&mut ctx);
-        assert_eq!(*ctx.render_yaw, 0.0); // Lan dau kick hoat Alt, dong bo free_yaw voi server_yaw
+        assert_eq!(*ctx.render_yaw, 0.0); // Initial Alt activation syncs free_yaw to server_yaw
 
-        // Khi da kich hoat va xoay camera:
+        // After activation with camera rotation:
         freelook.free_yaw = 120.0;
         freelook.on_camera_update(&mut ctx);
         assert_eq!(*ctx.render_yaw, 120.0);
-        assert_eq!(ctx.server_yaw, 0.0); // server_yaw van giu nguyen goc
+        assert_eq!(ctx.server_yaw, 0.0); // server_yaw remains unchanged
     }
 
     #[test]
@@ -221,8 +221,11 @@ mod tests {
             is_zoom_held: true,
         };
 
-        // Khi giu Zoom C, FOV phai thu hep dan qua cac khung hinh
+        // Holding Zoom C narrows FOV smoothly across frames
         zoom.on_camera_update(&mut ctx);
-        assert!(*ctx.render_fov < 90.0, "FOV phai giam xuong khi zoom");
+        assert!(
+            *ctx.render_fov < 90.0,
+            "FOV must decrease when zoom is active"
+        );
     }
 }

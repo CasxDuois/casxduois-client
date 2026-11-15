@@ -2,7 +2,7 @@
 name = "casx_launcher"
 version = "0.1.0"
 edition = "2021"
-description = "Unified Launcher (HoYoPlay Hub x Legacy Quick-Switch x Lunar Client HUD) and profile/afk manager"
+description = "Profile management and version configuration state."
 
 [dependencies]
 casx_core = { workspace = true }

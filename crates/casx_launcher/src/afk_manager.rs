@@ -1,12 +1,10 @@
-//! Quan ly he thong Eco-AFK chay ngam da tai khoan (Multi-Account Headless Runner).
-//!
-//! Tuan thu nghiem ngat quy chuan bo nho: $< 15\text{ MB RAM}$ cho moi phien AFK.
+//! Multi-account headless Eco-AFK session manager.
 
 use casx_core::GameVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Trang thai hoat dong cua mot phien Eco-AFK
+/// Operating status of an Eco-AFK session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AfkStatus {
     Idle,
@@ -16,7 +14,7 @@ pub enum AfkStatus {
     Failed,
 }
 
-/// Cau hinh khoi chay mot bot Eco-AFK
+/// Launch configuration for an Eco-AFK bot.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AfkSessionConfig {
     pub server_address: String,
@@ -33,12 +31,12 @@ impl AfkSessionConfig {
             bot_nickname: bot_nickname.to_string(),
             protocol_version,
             auto_reconnect: true,
-            memory_budget_mb: 15, // Quy chuan ky thuat < 15 MB RAM
+            memory_budget_mb: 15,
         }
     }
 }
 
-/// Thong tin chi tiet mot phien Eco-AFK
+/// Detailed telemetry of an Eco-AFK session.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AfkSession {
     pub id: u64,
@@ -48,7 +46,7 @@ pub struct AfkSession {
     pub memory_used_mb: f32,
 }
 
-/// Bo dieu phoi trung tam cac tai khoan Eco-AFK
+/// Central coordinator for multi-account Eco-AFK sessions.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct AfkSessionManager {
     pub next_id: u64,
@@ -63,7 +61,7 @@ impl AfkSessionManager {
         }
     }
 
-    /// Dang ky va bat dau mot phien Eco-AFK moi
+    /// Registers and starts a new Eco-AFK session.
     pub fn start_session(&mut self, config: AfkSessionConfig) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -73,14 +71,14 @@ impl AfkSessionManager {
             config,
             status: AfkStatus::Running,
             ticks_alive: 0,
-            memory_used_mb: 12.5, // Uoc luong thuc te luc khoi chay
+            memory_used_mb: 12.5,
         };
 
         self.sessions.insert(id, session);
         id
     }
 
-    /// Dung mot phien Eco-AFK
+    /// Stops an active Eco-AFK session.
     pub fn stop_session(&mut self, id: u64) -> bool {
         if let Some(session) = self.sessions.get_mut(&id) {
             session.status = AfkStatus::Stopped;
@@ -90,12 +88,12 @@ impl AfkSessionManager {
         }
     }
 
-    /// Xoa bo mot phien da dung
+    /// Removes a stopped session.
     pub fn remove_session(&mut self, id: u64) -> bool {
         self.sessions.remove(&id).is_some()
     }
 
-    /// Tinh tong luong RAM tieu thu cua toan bo cac bot AFK
+    /// Calculates total memory consumed across active bots.
     pub fn total_memory_consumption_mb(&self) -> f32 {
         self.sessions
             .values()
@@ -104,7 +102,7 @@ impl AfkSessionManager {
             .sum()
     }
 
-    /// So luong bot AFK dang hoat dong
+    /// Count of active AFK bots.
     pub fn active_count(&self) -> usize {
         self.sessions
             .values()
@@ -112,7 +110,7 @@ impl AfkSessionManager {
             .count()
     }
 
-    /// Khoi chay mot tien trinh con CasxDuois.exe o che do Eco-AFK qua std::env::current_exe()
+    /// Spawns a background subprocess runner via std::env::current_exe().
     pub fn spawn_subprocess_afk(config: &AfkSessionConfig) -> Result<u32, std::io::Error> {
         if let Ok(exe_path) = std::env::current_exe() {
             let ver_str = match config.protocol_version {
@@ -131,7 +129,10 @@ impl AfkSessionManager {
                 .spawn()?;
             Ok(child.id())
         } else {
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Khong tim thay current_exe"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Current executable path not found",
+            ))
         }
     }
 }

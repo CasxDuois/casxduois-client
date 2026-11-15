@@ -2,6 +2,7 @@
 name = "casx-afk"
 version = "0.1.0"
 edition = "2021"
+description = "Headless 20 TPS client runner for low-memory background sessions."
 
 [dependencies]
 casx_core = { workspace = true }

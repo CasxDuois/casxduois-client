@@ -2,6 +2,7 @@
 name = "casx-net"
 version = "0.1.0"
 edition = "2021"
+description = "Minecraft network framing and protocol adapters for v340 (1.12.2) and v776 (26.2)."
 
 [dependencies]
 casx_core = { workspace = true }

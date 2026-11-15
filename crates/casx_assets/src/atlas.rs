@@ -1,9 +1,9 @@
 // crates/casx_assets/src/atlas.rs
-// Bo ghep TextureAtlas, anh xa toa do UV va bo sinh anh Texture du phong (Procedural Fallback)
+// Texture atlas packer, UV coordinate mapping, and procedural fallback generator.
 
 use std::collections::HashMap;
 
-/// Dinh nghia cac Texture ID noi bo trong Atlas
+/// Internal texture IDs in Atlas
 pub const TEX_MISSING: u16 = 0;
 pub const TEX_STONE: u16 = 1;
 pub const TEX_GRASS_TOP: u16 = 2;
@@ -20,7 +20,7 @@ pub const TEX_LEAVES: u16 = 12;
 pub const TEX_GLASS: u16 = 13;
 pub const TEX_WATER: u16 = 14;
 
-/// Bo quan ly TextureAtlas luu tren GPU
+/// TextureAtlas buffer manager.
 #[derive(Debug, Clone)]
 pub struct TextureAtlas {
     pub width: u32,
@@ -58,7 +58,7 @@ impl TextureAtlas {
         }
     }
 
-    /// Tinh toan toa do UV [u, v] theo texture_id va chi so goc corner (0..3)
+    /// Computes UV coordinates [u, v] by texture_id and corner index (0..3).
     /// - 0: Top-Left (U0, V0)
     /// - 1: Top-Right (U1, V0)
     /// - 2: Bottom-Right (U1, V1)
@@ -111,17 +111,17 @@ impl TextureAtlas {
             }
             18 => TEX_LEAVES,
             20 => TEX_GLASS,
-            _ => TEX_DIRT, // Mac dinh ve dirt neu chua ro
+            _ => TEX_DIRT,
         }
     }
 
-    /// Kiem tra khoi co phai la trong suot hay khong (de bat face culling hoac alpha pass)
+    /// Checks if a block state is transparent for culling and alpha blending.
     pub fn is_transparent(block_id: u16) -> bool {
         block_id == 0 || block_id == 8 || block_id == 9 || block_id == 18 || block_id == 20
     }
 }
 
-/// Sinh mang byte RGBA8 cho TextureAtlas du phong procedural (512x512, moi tile 16x16)
+/// Generates RGBA8 pixel buffer for procedural fallback TextureAtlas (512x512, 16x16 tiles).
 pub fn generate_procedural_atlas() -> (Vec<u8>, TextureAtlas) {
     let width = 512u32;
     let height = 512u32;
@@ -129,22 +129,22 @@ pub fn generate_procedural_atlas() -> (Vec<u8>, TextureAtlas) {
     let mut pixels = vec![0u8; (width * height * 4) as usize];
     let atlas = TextureAtlas::new(width, height, tile_size);
 
-    // Dinh nghia mau sac dai dien cho tung tile
+    // Color definitions for each procedural tile
     let color_defs: [(u16, [u8; 4], [u8; 4]); 14] = [
-        (TEX_MISSING, [255, 0, 255, 255], [0, 0, 0, 255]),          // Magenta/Black checker
-        (TEX_STONE, [125, 125, 125, 255], [105, 105, 105, 255]),     // Stone gray noise
-        (TEX_GRASS_TOP, [92, 160, 46, 255], [76, 140, 36, 255]),     // Grass green
-        (TEX_GRASS_SIDE, [134, 96, 67, 255], [92, 160, 46, 255]),    // Grass side
-        (TEX_DIRT, [134, 96, 67, 255], [115, 80, 52, 255]),         // Dirt brown
-        (TEX_COBBLESTONE, [100, 100, 100, 255], [70, 70, 70, 255]),  // Cobble dark gray
-        (TEX_PLANKS, [162, 130, 78, 255], [140, 110, 60, 255]),      // Oak planks
-        (TEX_BEDROCK, [50, 50, 50, 255], [20, 20, 20, 255]),         // Bedrock dark
-        (TEX_SAND, [219, 207, 153, 255], [200, 185, 130, 255]),      // Sand yellow
-        (TEX_GRAVEL, [136, 126, 126, 255], [110, 100, 100, 255]),    // Gravel gray-brown
-        (TEX_LOG_SIDE, [103, 82, 49, 255], [60, 45, 25, 255]),       // Log bark
-        (TEX_LOG_TOP, [162, 130, 78, 255], [103, 82, 49, 255]),      // Log rings
-        (TEX_LEAVES, [50, 120, 20, 220], [30, 90, 15, 220]),         // Leaves cutout green
-        (TEX_WATER, [47, 67, 244, 180], [35, 55, 200, 180]),         // Water translucent blue
+        (TEX_MISSING, [255, 0, 255, 255], [0, 0, 0, 255]), // Magenta/Black checker
+        (TEX_STONE, [125, 125, 125, 255], [105, 105, 105, 255]), // Stone gray noise
+        (TEX_GRASS_TOP, [92, 160, 46, 255], [76, 140, 36, 255]), // Grass green
+        (TEX_GRASS_SIDE, [134, 96, 67, 255], [92, 160, 46, 255]), // Grass side
+        (TEX_DIRT, [134, 96, 67, 255], [115, 80, 52, 255]), // Dirt brown
+        (TEX_COBBLESTONE, [100, 100, 100, 255], [70, 70, 70, 255]), // Cobble dark gray
+        (TEX_PLANKS, [162, 130, 78, 255], [140, 110, 60, 255]), // Oak planks
+        (TEX_BEDROCK, [50, 50, 50, 255], [20, 20, 20, 255]), // Bedrock dark
+        (TEX_SAND, [219, 207, 153, 255], [200, 185, 130, 255]), // Sand yellow
+        (TEX_GRAVEL, [136, 126, 126, 255], [110, 100, 100, 255]), // Gravel gray-brown
+        (TEX_LOG_SIDE, [103, 82, 49, 255], [60, 45, 25, 255]), // Log bark
+        (TEX_LOG_TOP, [162, 130, 78, 255], [103, 82, 49, 255]), // Log rings
+        (TEX_LEAVES, [50, 120, 20, 220], [30, 90, 15, 220]), // Leaves cutout green
+        (TEX_WATER, [47, 67, 244, 180], [35, 55, 200, 180]), // Water translucent blue
     ];
 
     for &(id, c1, c2) in &color_defs {
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(atlas.width, 512);
         assert_eq!(atlas.height, 512);
 
-        // Kiem tra pixel dau tien cua tile stone (px = 16, py = 0)
+        // Verify first pixel of stone tile (px = 16, py = 0)
         let stone_idx = (16 * 4) as usize;
         let r = pixels[stone_idx];
         assert!(r == 125 || r == 105);

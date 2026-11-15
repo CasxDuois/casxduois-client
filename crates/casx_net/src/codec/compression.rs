@@ -1,14 +1,14 @@
 // crates/casx_net/src/codec/compression.rs
-// Giai nen va nen Zlib theo nguong threshold cua goi Set Compression (0x03)
+// Zlib packet compression and decompression based on Set Compression (0x03) threshold
 
+use super::frame::RawPacket;
+use super::varint::{read_varint_from_buf, varint_len, write_varint_to_buf};
 use bytes::BytesMut;
 use casx_core::ProtocolError;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use std::io::{Read, Write};
-use super::varint::{read_varint_from_buf, write_varint_to_buf, varint_len};
-use super::frame::RawPacket;
 
 #[derive(Debug, Clone)]
 pub struct PacketCompressor {
@@ -24,8 +24,11 @@ impl PacketCompressor {
         self.threshold
     }
 
-    /// Giai ma khung goi tin da duoc nen Zlib
-    pub fn decompress_packet(&self, compressed_frame: &mut BytesMut) -> Result<Option<RawPacket>, ProtocolError> {
+    /// Decompresses a Zlib-compressed packet frame
+    pub fn decompress_packet(
+        &self,
+        compressed_frame: &mut BytesMut,
+    ) -> Result<Option<RawPacket>, ProtocolError> {
         let mut temp = compressed_frame.clone();
         if let Some(packet_len) = read_varint_from_buf(&mut temp)? {
             let packet_len_len = varint_len(packet_len);
@@ -38,21 +41,22 @@ impl PacketCompressor {
             let _ = read_varint_from_buf(compressed_frame)?;
             let mut body = compressed_frame.split_to(packet_len as usize);
 
-            let data_length = read_varint_from_buf(&mut body)?
-                .ok_or(ProtocolError::UnexpectedEof)?;
+            let data_length =
+                read_varint_from_buf(&mut body)?.ok_or(ProtocolError::UnexpectedEof)?;
 
             if data_length == 0 {
-                // Khong bi nen (payload < threshold)
+                // Uncompressed (payload < threshold)
                 if let Some(packet_id) = read_varint_from_buf(&mut body)? {
                     Ok(Some(RawPacket::new(packet_id, body.freeze())))
                 } else {
                     Err(ProtocolError::UnexpectedEof)
                 }
             } else {
-                // Bi nen bang Zlib
+                // Compressed via Zlib
                 let mut decoder = ZlibDecoder::new(&body[..]);
                 let mut decompressed = Vec::with_capacity(data_length as usize);
-                decoder.read_to_end(&mut decompressed)
+                decoder
+                    .read_to_end(&mut decompressed)
                     .map_err(|e| ProtocolError::CompressionError(e.to_string()))?;
 
                 let mut decomp_buf = BytesMut::from(&decompressed[..]);
@@ -67,8 +71,12 @@ impl PacketCompressor {
         }
     }
 
-    /// Nen va dong goi packet
-    pub fn compress_packet(&self, packet: &RawPacket, dst: &mut BytesMut) -> Result<(), ProtocolError> {
+    /// Compresses and frames packet into destination buffer
+    pub fn compress_packet(
+        &self,
+        packet: &RawPacket,
+        dst: &mut BytesMut,
+    ) -> Result<(), ProtocolError> {
         let uncompressed_len = varint_len(packet.id) + packet.payload.len();
 
         if (uncompressed_len as i32) < self.threshold {
@@ -80,15 +88,17 @@ impl PacketCompressor {
             write_varint_to_buf(packet.id, dst);
             dst.extend_from_slice(&packet.payload);
         } else {
-            // Nen qua Zlib
+            // Compress via Zlib
             let mut raw_data = BytesMut::with_capacity(uncompressed_len);
             write_varint_to_buf(packet.id, &mut raw_data);
             raw_data.extend_from_slice(&packet.payload);
 
             let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(&raw_data)
+            encoder
+                .write_all(&raw_data)
                 .map_err(|e| ProtocolError::CompressionError(e.to_string()))?;
-            let compressed_data = encoder.finish()
+            let compressed_data = encoder
+                .finish()
                 .map_err(|e| ProtocolError::CompressionError(e.to_string()))?;
 
             let data_length = uncompressed_len as i32;

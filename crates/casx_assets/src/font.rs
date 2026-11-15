@@ -1,10 +1,10 @@
-//! Trinh quan ly Font chu Bitmap va Unicode Glyph Provider.
+//! Bitmap Font Manager and Unicode Glyph Provider.
 //!
-//! Ho tro render van ban tieng Viet / Unicode va ky tu tuy bien may chu (Private Use Area E000-F8FF).
+//! Supports rendering Unicode text and custom server glyphs (Private Use Area E000-F8FF).
 
 use std::collections::HashMap;
 
-/// Thong so do dac cua mot ky tu (Glyph)
+/// Glyph measurement metrics
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlyphMetrics {
     pub char_code: char,
@@ -22,7 +22,7 @@ impl GlyphMetrics {
     pub const DEFAULT_WIDTH: f32 = 6.0;
 }
 
-/// Bo cung cap font chu va do dac van ban (Font Provider)
+/// Font provider and text measurement
 #[derive(Debug, Clone)]
 pub struct FontProvider {
     pub glyphs: HashMap<char, GlyphMetrics>,
@@ -38,7 +38,7 @@ impl Default for FontProvider {
             space_advance: 4.0,
         };
 
-        // Khoi tao bang glyph co ban (ASCII 32..126)
+        // Populate standard ASCII glyph metrics (ASCII 32..126)
         provider.init_ascii_glyphs();
         provider
     }
@@ -78,7 +78,7 @@ impl FontProvider {
         }
     }
 
-    /// Dang ky mot Glyph tuy bien (vi du icon may chu trong khoang PUA \u{E000} - \u{F8FF})
+    /// Register a custom glyph (e.g. server icons in PUA \u{E000} - \u{F8FF})
     pub fn register_custom_glyph(&mut self, c: char, width: f32, height: f32, advance: f32) {
         self.glyphs.insert(
             c,
@@ -95,12 +95,12 @@ impl FontProvider {
         );
     }
 
-    /// Lay thong so cua mot ky tu, su dung fallback neu chua duoc dinh nghia
+    /// Retrieve metrics for a character, using a fallback if undefined
     pub fn get_glyph(&self, c: char) -> GlyphMetrics {
         if let Some(glyph) = self.glyphs.get(&c) {
             *glyph
         } else {
-            // Fallback cho ky tu chua ro
+            // Fallback for unknown character
             GlyphMetrics {
                 char_code: c,
                 width: 6.0,
@@ -114,13 +114,13 @@ impl FontProvider {
         }
     }
 
-    /// Tinh toan chieu rong chinh xac cua chuoi van ban tinh theo diem pixel
+    /// Calculate exact text width in pixels
     pub fn measure_text_width(&self, text: &str) -> f32 {
         let mut width = 0.0;
         let mut chars = text.chars().peekable();
 
         while let Some(c) = chars.next() {
-            // Bo qua ma mau Minecraft dang §a, §b...
+            // Skip Minecraft formatting codes (§a, §c...)
             if c == '§' {
                 chars.next();
                 continue;
@@ -143,16 +143,15 @@ mod tests {
         assert_eq!(font.get_glyph('!').width, 2.0);
         assert_eq!(font.get_glyph('A').width, 6.0);
 
-        // Do chieu rong chuoi binh thuong
         let width = font.measure_text_width("Casx");
         assert!(width > 0.0);
 
-        // Kiem tra bo qua ma mau Minecraft (§a, §c...)
+        // Verify section code skipping (§a, §c...)
         let raw_width = font.measure_text_width("Hello");
         let colored_width = font.measure_text_width("§cHello");
         assert_eq!(raw_width, colored_width);
 
-        // Dang ky glyph tuy bien cho server icon
+        // Register custom glyph for server icon
         font.register_custom_glyph('\u{E001}', 16.0, 16.0, 17.0);
         let custom_glyph = font.get_glyph('\u{E001}');
         assert_eq!(custom_glyph.width, 16.0);

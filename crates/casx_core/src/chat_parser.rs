@@ -1,9 +1,9 @@
-//! Bo phan tich van ban chat da dinh dang (§ legacy va JSON Component).
+//! Formatted chat text parser (§ legacy codes and JSON Components).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Doan van ban kem thuoc tinh mau sac va dinh dang kieu chu
+/// Styled text segment with formatting attributes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StyledTextSpan {
     pub text: String,
@@ -29,7 +29,7 @@ impl Default for StyledTextSpan {
     }
 }
 
-/// Chuyen doi ma mau ky tu co dien (0-9, a-f) sang RGB
+/// Convert legacy color code (0-9, a-f) to RGB
 pub fn legacy_color_code_to_rgb(code: char) -> Option<[u8; 3]> {
     match code.to_ascii_lowercase() {
         '0' => Some([0, 0, 0]),
@@ -52,12 +52,16 @@ pub fn legacy_color_code_to_rgb(code: char) -> Option<[u8; 3]> {
     }
 }
 
-/// Chuyen doi ten mau Minecraft hoac chuoi Hex `#RRGGBB` sang RGB
+/// Convert Minecraft color name or hex string `#RRGGBB` to RGB
 pub fn named_or_hex_to_rgb(name: &str) -> [u8; 3] {
     if let Some(hex) = name.strip_prefix('#') {
         if hex.len() == 6 {
             if let Ok(val) = u32::from_str_radix(hex, 16) {
-                return [((val >> 16) & 0xFF) as u8, ((val >> 8) & 0xFF) as u8, (val & 0xFF) as u8];
+                return [
+                    ((val >> 16) & 0xFF) as u8,
+                    ((val >> 8) & 0xFF) as u8,
+                    (val & 0xFF) as u8,
+                ];
             }
         }
     }
@@ -81,7 +85,7 @@ pub fn named_or_hex_to_rgb(name: &str) -> [u8; 3] {
     }
 }
 
-/// Phan tich chuoi chua ma mau Section Sign `§` thanh danh sach StyledTextSpan
+/// Parse string containing Section Sign `§` formatting into a list of StyledTextSpans
 pub fn parse_legacy_section_text(input: &str, base_style: StyledTextSpan) -> Vec<StyledTextSpan> {
     let mut spans = Vec::new();
     let mut current = base_style;
@@ -91,7 +95,7 @@ pub fn parse_legacy_section_text(input: &str, base_style: StyledTextSpan) -> Vec
         if ch == '§' {
             if let Some(&code) = chars.peek() {
                 chars.next();
-                // Kiem tra ma mau Hex: §#RRGGBB
+                // Check hex color code: §#RRGGBB
                 if code == '#' {
                     let mut hex_str = String::with_capacity(6);
                     for _ in 0..6 {
@@ -110,7 +114,11 @@ pub fn parse_legacy_section_text(input: &str, base_style: StyledTextSpan) -> Vec
                             current.text.clear();
                         }
                         if let Ok(val) = u32::from_str_radix(&hex_str, 16) {
-                            current.color = [((val >> 16) & 0xFF) as u8, ((val >> 8) & 0xFF) as u8, (val & 0xFF) as u8];
+                            current.color = [
+                                ((val >> 16) & 0xFF) as u8,
+                                ((val >> 8) & 0xFF) as u8,
+                                (val & 0xFF) as u8,
+                            ];
                         }
                         continue;
                     }
@@ -169,13 +177,13 @@ pub fn parse_legacy_section_text(input: &str, base_style: StyledTextSpan) -> Vec
     spans
 }
 
-/// Phan tich chuoi JSON Text Component thanh danh sach cac StyledTextSpan
+/// Parse JSON Text Component string into a list of StyledTextSpans
 pub fn parse_json_text_component(json_str: &str) -> Vec<StyledTextSpan> {
     let mut spans = Vec::new();
     if let Ok(value) = serde_json::from_str::<Value>(json_str) {
         flatten_json_node(&value, StyledTextSpan::default(), &mut spans);
     } else {
-        // Neu khong phai JSON hop le, coi nhu van ban thuong
+        // Fallback to plain text if JSON is invalid
         spans.push(StyledTextSpan {
             text: json_str.to_string(),
             ..Default::default()
@@ -187,7 +195,7 @@ pub fn parse_json_text_component(json_str: &str) -> Vec<StyledTextSpan> {
 fn flatten_json_node(val: &Value, mut inherited: StyledTextSpan, out: &mut Vec<StyledTextSpan>) {
     match val {
         Value::String(s) => {
-            // Chuoi ben trong co the chua them ma mau §
+            // Inner string may contain legacy § formatting codes
             let legacy_parsed = parse_legacy_section_text(s, inherited);
             out.extend(legacy_parsed);
         }

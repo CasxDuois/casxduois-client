@@ -1,10 +1,10 @@
-//! Bo phan tich CustomModelData va anh xa Texture/Model tuy bien cho Server Items.
+//! CustomModelData parser and custom texture/model mapping for server items.
 //!
-//! Cho phep cac may chu MMO/RPG (nhu Hypixel, Aemine) hien thi vu khi, giap va vat pham tuy bien qua the NBT `CustomModelData`.
+//! Enables MMO/RPG servers (e.g. Hypixel, Aemine) to render custom weapons, armor, and items via the `CustomModelData` NBT tag.
 
 use std::collections::HashMap;
 
-/// Quy tac override mo hinh dua theo gia tri CustomModelData
+/// Model override rule based on CustomModelData value
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelOverride {
     pub custom_model_data: i32,
@@ -12,7 +12,7 @@ pub struct ModelOverride {
     pub texture_id: u16,
 }
 
-/// Dinh nghia mo hinh vat pham va danh sach cac override
+/// Item model definition and its list of overrides
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemModelDefinition {
     pub item_id: i32,
@@ -37,7 +37,7 @@ impl ItemModelDefinition {
         });
     }
 
-    /// Tim texture phu hop dua vao the CustomModelData
+    /// Resolve texture matching the given CustomModelData tag
     pub fn resolve_texture(&self, custom_model_data: Option<i32>) -> u16 {
         if let Some(cmd) = custom_model_data {
             for ovr in &self.overrides {
@@ -50,7 +50,7 @@ impl ItemModelDefinition {
     }
 }
 
-/// So dang ky tap trung cac mo hinh CustomModelData
+/// Central registry for CustomModelData models
 #[derive(Debug, Default, Clone)]
 pub struct CustomModelRegistry {
     pub models: HashMap<i32, ItemModelDefinition>,
@@ -61,12 +61,12 @@ impl CustomModelRegistry {
         Self::default()
     }
 
-    /// Dang ky mot mo hinh vat pham
+    /// Register an item model definition
     pub fn register(&mut self, model: ItemModelDefinition) {
         self.models.insert(model.item_id, model);
     }
 
-    /// Phan giai texture cho mot vat pham
+    /// Resolve texture ID for an item
     pub fn resolve_item_texture(&self, item_id: i32, custom_model_data: Option<i32>) -> u16 {
         if let Some(def) = self.models.get(&item_id) {
             def.resolve_texture(custom_model_data)
@@ -84,28 +84,28 @@ mod tests {
     fn test_custom_model_data_resolution() {
         let mut registry = CustomModelRegistry::new();
 
-        // Vat pham 276 (Diamond Sword trong 1.12.2) voi texture mac dinh = 50
+        // Item 276 (Diamond Sword in 1.12.2) with default texture = 50
         let mut sword = ItemModelDefinition::new(276, 50);
-        // Dang ky CustomModelData: 1001 -> Dragon Blade (Texture ID 2001)
+        // Register CustomModelData: 1001 -> Dragon Blade (Texture ID 2001)
         sword.add_override(1001, "item/dragon_blade", 2001);
-        // Dang ky CustomModelData: 1002 -> Excalibur (Texture ID 2002)
+        // Register CustomModelData: 1002 -> Excalibur (Texture ID 2002)
         sword.add_override(1002, "item/excalibur", 2002);
 
         registry.register(sword);
 
-        // Khong co CustomModelData -> tra ve texture mac dinh
+        // No CustomModelData -> returns default texture
         assert_eq!(registry.resolve_item_texture(276, None), 50);
 
-        // CustomModelData 1001 -> tra ve 2001
+        // CustomModelData 1001 -> returns 2001
         assert_eq!(registry.resolve_item_texture(276, Some(1001)), 2001);
 
-        // CustomModelData 1002 -> tra ve 2002
+        // CustomModelData 1002 -> returns 2002
         assert_eq!(registry.resolve_item_texture(276, Some(1002)), 2002);
 
-        // CustomModelData khong khop -> fallback texture mac dinh
+        // Unmatched CustomModelData -> fallback to default texture
         assert_eq!(registry.resolve_item_texture(276, Some(9999)), 50);
 
-        // Item ID chua dang ky -> tra ve 0
+        // Unregistered item ID -> returns 0
         assert_eq!(registry.resolve_item_texture(999, None), 0);
     }
 }

@@ -1,4 +1,4 @@
-//! Trang thai tich hop cua Unified Launcher (HoYoPlay Hub x Legacy Quick-Switch x Lunar Client Modules).
+//! Launcher application state and launch target builder.
 
 use crate::afk_manager::{AfkSessionConfig, AfkSessionManager};
 use crate::mods::ModConfig;
@@ -6,7 +6,7 @@ use crate::profile::{PlayerProfile, ProfileManager};
 use crate::server_list::ServerListManager;
 use casx_core::GameVersion;
 
-/// Hanh dong khoi chay duoc phat ra tu Launcher
+/// Launch action dispatched from Launcher.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaunchTarget {
     NormalClient {
@@ -23,7 +23,7 @@ pub enum LaunchTarget {
     },
 }
 
-/// Che do hien thi cua Launcher
+/// Viewport tabs of the launcher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LauncherTab {
     Hub,
@@ -32,7 +32,7 @@ pub enum LauncherTab {
     AfkManager,
 }
 
-/// Toan bo trang thai cua Launcher duoc luu tru tap trung
+/// Central launcher state.
 #[derive(Debug, Clone)]
 pub struct LauncherState {
     pub current_tab: LauncherTab,
@@ -70,7 +70,7 @@ impl LauncherState {
         Self::default()
     }
 
-    /// Chuyen doi phien ban dang chon giua 1.12.2 va 26.2
+    /// Cycles active version between 1.12.2 and 26.2.
     pub fn cycle_version(&mut self) -> GameVersion {
         if let Some(prof) = self.profile_manager.get_active_profile_mut() {
             prof.selected_version = match prof.selected_version {
@@ -83,15 +83,20 @@ impl LauncherState {
         }
     }
 
-    /// Tao lenh khoi chay game hoac khoi chay che do Eco-AFK
+    /// Builds a launch target from current profile and server input.
     pub fn build_launch_target(&self) -> LaunchTarget {
         let parts: Vec<&str> = self.target_server_input.split(':').collect();
         let host = parts.first().unwrap_or(&"127.0.0.1").trim().to_string();
-        let port = parts.get(1).and_then(|p| p.trim().parse::<u16>().ok()).unwrap_or(25565);
+        let port = parts
+            .get(1)
+            .and_then(|p| p.trim().parse::<u16>().ok())
+            .unwrap_or(25565);
 
-        let active_prof = self.profile_manager.get_active_profile().cloned().unwrap_or_else(|| {
-            PlayerProfile::new_offline("CasxPlayer")
-        });
+        let active_prof = self
+            .profile_manager
+            .get_active_profile()
+            .cloned()
+            .unwrap_or_else(|| PlayerProfile::new_offline("CasxPlayer"));
 
         if self.is_eco_afk_selected {
             LaunchTarget::EcoAfk {
@@ -110,12 +115,22 @@ impl LauncherState {
         }
     }
 
-    /// Khoi chay mot bot AFK moi tu dia chi va ho so dang chon
+    /// Spawns a new AFK bot session from current selection.
     pub fn spawn_afk_bot_from_current_selection(&mut self) -> u64 {
         let target = self.build_launch_target();
         match target {
-            LaunchTarget::EcoAfk { host, port, username, version }
-            | LaunchTarget::NormalClient { host, port, username, version } => {
+            LaunchTarget::EcoAfk {
+                host,
+                port,
+                username,
+                version,
+            }
+            | LaunchTarget::NormalClient {
+                host,
+                port,
+                username,
+                version,
+            } => {
                 let addr = format!("{}:{}", host, port);
                 let cfg = AfkSessionConfig::new(&addr, &format!("{}_AFK", username), version);
                 self.afk_manager.start_session(cfg)
@@ -135,7 +150,12 @@ mod tests {
 
         let target = state.build_launch_target();
         match target {
-            LaunchTarget::NormalClient { host, port, username, version } => {
+            LaunchTarget::NormalClient {
+                host,
+                port,
+                username,
+                version,
+            } => {
                 assert_eq!(host, "aemine.net");
                 assert_eq!(port, 25565);
                 assert_eq!(username, "CasxPlayer");
@@ -144,7 +164,6 @@ mod tests {
             _ => panic!("Expected NormalClient"),
         }
 
-        // Chuyen sang che do Eco-AFK
         state.is_eco_afk_selected = true;
         let afk_target = state.build_launch_target();
         match afk_target {
@@ -154,7 +173,6 @@ mod tests {
             _ => panic!("Expected EcoAfk"),
         }
 
-        // Kiem tra chuyen version
         let new_ver = state.cycle_version();
         assert_eq!(new_ver, GameVersion::V26_2);
     }

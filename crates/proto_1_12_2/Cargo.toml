@@ -2,7 +2,7 @@
 name = "proto_1_12_2"
 version = "0.1.0"
 edition = "2021"
-description = "Minecraft 1.12.2 (Protocol 340) network protocol adapter for CasxDuois Client (Layer 3A)"
+description = "Minecraft 1.12.2 (v340) network protocol codec and packet handlers."
 
 [dependencies]
 casx_core = { workspace = true }

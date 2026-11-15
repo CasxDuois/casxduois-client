@@ -1,63 +1,63 @@
-//! Crate `casx_core` (Tang 2 trong do thi phu thuoc DAG).
+//! Crate `casx_core` (Layer 2 in DAG).
 //!
-//! Trach nhiem:
-//! - Khung giao thuc mang, ma hoa AES-128-CFB8 va nen Zlib.
-//! - Bo phan tich Binary NBT da phien ban (Classic 1.12.2 va Nameless 26.2).
-//! - Bo phan tich van ban chat (§ legacy va JSON Component).
-//! - Bo nho dem the gioi (WorldCache), vat ly 20 TPS, do tia 3D DDA va giao tiep casx-ctl.
+//! Responsibilities:
+//! - Core network codec, AES-128-CFB8 cryptography, and Zlib compression.
+//! - Multi-version Binary NBT parser (Classic 1.12.2 and Nameless 26.2).
+//! - Chat text parsing (§ legacy formatting and JSON Text Components).
+//! - Exact lookup tables (jmath 65536 sin/cos), physics, and canonical protocol types.
 
-pub mod codec;
-pub mod crypto;
-pub mod compression;
-pub mod nbt;
+pub mod adapter;
 pub mod chat_parser;
-pub mod world;
+pub mod codec;
+pub mod compression;
+pub mod crypto;
+pub mod ctl_server;
+pub mod inventory;
+pub mod jmath;
+pub mod native_mods;
+pub mod nbt;
+pub mod palette;
 pub mod physics;
 pub mod raycast;
-pub mod inventory;
-pub mod native_mods;
-pub mod ctl_server;
-pub mod adapter;
-pub mod palette;
-pub mod jmath;
+pub mod world;
 
 pub use adapter::{ClientAction, ConnectionState, GameVersion, ProtocolAdapter, ServerEvent};
 pub use inventory::{CanonicalItemStack, ItemStack};
-pub use jmath::{AABB, DVec3, IVec3};
+pub use jmath::{DVec3, IVec3, AABB};
 pub use world::{CanonicalBlockState, CanonicalBlockStateId, ChunkPos, ChunkSection};
 
 use thiserror::Error;
 
-/// Cac loi phat sinh trong qua trinh doc/ghi giao thuc mang Minecraft
+/// Protocol codec and decoding errors.
 #[derive(Debug, Error)]
 pub enum ProtocolError {
-    #[error("[ProtocolError::VarIntTooBig] VarInt vuot qua gioi han 5 bytes")]
+    #[error("VarInt exceeds 5 bytes limit")]
     VarIntTooBig,
 
-    #[error("[ProtocolError::VarLongTooBig] VarLong vuot qua gioi han 10 bytes")]
+    #[error("VarLong exceeds 10 bytes limit")]
     VarLongTooBig,
 
-    #[error("[ProtocolError::UnexpectedEof] Du lieu luong mang bi thieu truoc khi doc xong")]
+    #[error("Unexpected end of file while reading buffer")]
     UnexpectedEof,
 
-    #[error("[ProtocolError::InvalidString] Chuoi khong phai UTF-8 hop le")]
+    #[error("Invalid UTF-8 string: {0}")]
     InvalidString(#[from] std::string::FromUtf8Error),
 
-    #[error("[ProtocolError::StringTooLong] Chuoi vuot qua do dai toi da: {len} > {max}")]
+    #[error("String exceeds maximum allowed length: {len} > {max}")]
     StringTooLong { len: usize, max: usize },
 
-    #[error("[ProtocolError::CompressionError] Loi giai nen Zlib: {0}")]
+    #[error("Zlib compression error: {0}")]
     CompressionError(String),
 
-    #[error("[ProtocolError::InvalidNbtTag] Ma Tag NBT khong hop le: {0}")]
+    #[error("Invalid NBT tag type: {0}")]
     InvalidNbtTag(u8),
 
-    #[error("[ProtocolError::NbtParseError] Loi phan tich Binary NBT: {0}")]
+    #[error("Binary NBT parse error: {0}")]
     NbtParseError(String),
 
-    #[error("[ProtocolError::CryptoError] Loi ma hoa/giai ma: {0}")]
+    #[error("Cryptography error: {0}")]
     CryptoError(String),
 
-    #[error("[ProtocolError::Io] Loi I/O: {0}")]
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

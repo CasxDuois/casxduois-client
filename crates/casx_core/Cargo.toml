@@ -2,7 +2,7 @@
 name = "casx_core"
 version = "0.1.0"
 edition = "2021"
-description = "Core network codec, cryptography, NBT, physics, and world state for CasxDuois Client (Layer 2)"
+description = "Core primitives, Java-exact lookup tables, and canonical protocol types."
 
 [dependencies]
 casx_platform = { workspace = true }

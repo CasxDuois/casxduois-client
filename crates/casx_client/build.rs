@@ -1,12 +1,12 @@
 //! Build script for casx_client (CasxDuois.exe)
 //!
-//! Tich hop Windows Application Icon va Manifest metadata khi build tren target Windows.
+//! Integrates Windows Application Icon and Manifest metadata when building for Windows target.
 
 fn main() {
-    // Chi thuc thi tren nen tang Windows
+    // Only execute on Windows platform
     #[cfg(target_os = "windows")]
     {
-        // Khi co file resource .rc hoac .ico, winres se nhung truc tiep vao binary
+        // Embeds application resources and icons directly into binary
         println!("cargo:rerun-if-changed=build.rs");
     }
 }

@@ -1,8 +1,7 @@
-//! Khung giao tiep mang chuan hoa Canonical Bridge (Doc lap hoan toan giua 1.12.2 va 26.2).
+//! Canonical bridge protocol adapter interface (version-agnostic networking).
 //!
-//! Tuan thu nguyen tac Version Isolation: casx-world, casx-sim, casx-render, va casx-ui
-//! TUYET DOI KHONG import struct goi tin cu the cua phien ban. Toan bo du lieu duoc
-//! chuyen hoa thanh CanonicalServerEvent va CanonicalClientCmd.
+//! Enforces version isolation: domain logic crates never import protocol-specific packet structs.
+//! All network events are normalized into CanonicalServerEvent and CanonicalClientCmd.
 
 use crate::codec::varint::write_varint_to_buf;
 use crate::session::v340::{SessionEventV340, SessionV340};
@@ -10,7 +9,7 @@ use crate::session::v776::{SessionEventV776, SessionV776};
 use bytes::BytesMut;
 use casx_core::{CanonicalBlockStateId, ChunkPos, DVec3};
 
-/// Su kien chuan hoa tu Server day ve Client (Doc lap phien ban 1.12.2 hay 26.2)
+/// Canonical server events dispatched to client engine.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CanonicalServerEvent {
     PlayReady {
@@ -26,7 +25,7 @@ pub enum CanonicalServerEvent {
     },
     ChunkColumnData {
         pos: ChunkPos,
-        sections: Vec<Vec<CanonicalBlockStateId>>, // Moi section gom dung 4096 khoi (16x16x16)
+        sections: Vec<Vec<CanonicalBlockStateId>>,
     },
     BlockUpdate {
         x: i32,
@@ -43,7 +42,7 @@ pub enum CanonicalServerEvent {
     },
 }
 
-/// Lenh chuan hoa tu Client gui len Server
+/// Normalized client command sent to server
 #[derive(Debug, Clone, PartialEq)]
 pub enum CanonicalClientCmd {
     MovePlayer {
@@ -54,17 +53,27 @@ pub enum CanonicalClientCmd {
     },
     SendChat(String),
     SwingArm,
-    StartDigging { x: i32, y: i32, z: i32, face: u8 },
-    FinishDigging { x: i32, y: i32, z: i32, face: u8 },
+    StartDigging {
+        x: i32,
+        y: i32,
+        z: i32,
+        face: u8,
+    },
+    FinishDigging {
+        x: i32,
+        y: i32,
+        z: i32,
+        face: u8,
+    },
 }
 
-/// Trait dieu hop mang da phien ban
+/// Multi-version protocol adapter trait.
 pub trait ProtocolAdapter: Send {
     fn protocol_version(&self) -> u32;
     fn decode_inbound(
         &mut self,
         rx_buf: &mut BytesMut,
-        tx_buf: &mut BytesMut, // Cho phep phan hoi tuc thi KeepAlive / Configuration ngay tai tang mang
+        tx_buf: &mut BytesMut,
         events: &mut Vec<CanonicalServerEvent>,
     ) -> Result<(), String>;
     fn encode_outbound(
@@ -108,7 +117,7 @@ impl ProtocolAdapter for AdapterV340 {
             for ev in raw_events {
                 match ev {
                     SessionEventV340::LoginSuccess { username, .. } => {
-                        log::info!("[AdapterV340] Dang nhap thanh cong: {}", username);
+                        log::info!(target: "casx_net::adapter", "Logged in successfully as {}", username);
                     }
                     SessionEventV340::JoinGame { entity_id, .. } => {
                         events.push(CanonicalServerEvent::PlayReady {
@@ -117,7 +126,14 @@ impl ProtocolAdapter for AdapterV340 {
                             world_height: 256,
                         });
                     }
-                    SessionEventV340::PlayerPosLook { x, y, z, yaw, pitch, teleport_id } => {
+                    SessionEventV340::PlayerPosLook {
+                        x,
+                        y,
+                        z,
+                        yaw,
+                        pitch,
+                        teleport_id,
+                    } => {
                         events.push(CanonicalServerEvent::TeleportPlayer {
                             pos: DVec3::new(x, y, z),
                             yaw,
@@ -157,7 +173,12 @@ impl ProtocolAdapter for AdapterV340 {
         tx_buf: &mut BytesMut,
     ) -> Result<(), String> {
         match cmd {
-            CanonicalClientCmd::MovePlayer { pos, yaw, pitch, on_ground } => {
+            CanonicalClientCmd::MovePlayer {
+                pos,
+                yaw,
+                pitch,
+                on_ground,
+            } => {
                 let mut payload = BytesMut::new();
                 payload.extend_from_slice(&pos.x.to_be_bytes());
                 payload.extend_from_slice(&pos.y.to_be_bytes());
@@ -240,7 +261,7 @@ impl ProtocolAdapter for AdapterV776 {
             for ev in raw_events {
                 match ev {
                     SessionEventV776::LoginSuccess { username, .. } => {
-                        log::info!("[AdapterV776] Dang nhap thanh cong: {}", username);
+                        log::info!(target: "casx_net::adapter", "Logged in successfully as {}", username);
                     }
                     SessionEventV776::ConfigurationFinished => {
                         events.push(CanonicalServerEvent::PlayReady {
@@ -249,7 +270,14 @@ impl ProtocolAdapter for AdapterV776 {
                             world_height: self.session.height,
                         });
                     }
-                    SessionEventV776::PlayerPosSync { x, y, z, yaw, pitch, teleport_id } => {
+                    SessionEventV776::PlayerPosSync {
+                        x,
+                        y,
+                        z,
+                        yaw,
+                        pitch,
+                        teleport_id,
+                    } => {
                         events.push(CanonicalServerEvent::TeleportPlayer {
                             pos: DVec3::new(x, y, z),
                             yaw,
@@ -278,7 +306,12 @@ impl ProtocolAdapter for AdapterV776 {
         tx_buf: &mut BytesMut,
     ) -> Result<(), String> {
         match cmd {
-            CanonicalClientCmd::MovePlayer { pos, yaw, pitch, on_ground } => {
+            CanonicalClientCmd::MovePlayer {
+                pos,
+                yaw,
+                pitch,
+                on_ground,
+            } => {
                 let mut payload = BytesMut::new();
                 payload.extend_from_slice(&pos.x.to_be_bytes());
                 payload.extend_from_slice(&pos.y.to_be_bytes());
@@ -342,7 +375,7 @@ mod tests {
         let mut adapter_v776 = AdapterV776::new("Test776");
         assert_eq!(adapter_v776.protocol_version(), 776);
 
-        // Kiem tra encode MovePlayer qua Adapter
+        // Verify MovePlayer encoding across adapters
         let mut tx_buf = BytesMut::new();
         let cmd = CanonicalClientCmd::MovePlayer {
             pos: DVec3::new(10.0, 64.0, -15.0),
@@ -351,7 +384,9 @@ mod tests {
             on_ground: true,
         };
 
-        assert!(adapter_v340.encode_outbound(cmd.clone(), &mut tx_buf).is_ok());
+        assert!(adapter_v340
+            .encode_outbound(cmd.clone(), &mut tx_buf)
+            .is_ok());
         assert!(!tx_buf.is_empty());
 
         let mut tx_buf_776 = BytesMut::new();
