@@ -2,22 +2,42 @@
 //!
 //! Lien ket toan bo cac phan he:
 //! - Tang 1: casx_platform (Telemetry, nano-timer, OS detection)
-//! - Tang 2: casx_core (WorldCache, 20 TPS physics, DDA raycast, NBT, ctl_server)
-//! - Tang 3A: proto_1_12_2 (Protocol 340)
+//! - Tang 2: casx_core (WorldCache, 20 TPS physics, DDA raycast, NBT, ctl_server, jmath)
+//! - Tang 2.5: casx_assets (TextureAtlas, Procedural texture fallback)
+//! - Tang 3A: proto_1_12_2 (Protocol 340) & casx_net (Tokio TCP, SessionV340)
 //! - Tang 3B: proto_26_2 (Protocol 770)
-//! - Tang 3C: casx_render (wgpu, 64-bit vertex, Greedy Mesher)
+//! - Tang 3C: casx_render (wgpu, 64-bit vertex, 6-face Greedy Mesher, Frustum culling)
 //! - Tang 3D: casx_ui (egui HoYoPlay Hub x Legacy Quick-Switch x Lunar HUD)
+//! - Tang 3E: casx_sim (Swept AABB, 20 TPS physics loop, DDA raycast selection)
 
+use casx_assets::{generate_procedural_atlas, TextureAtlas};
 use casx_core::ctl_server::CasxCtlServer;
+use casx_core::jmath::DVec3;
 use casx_core::physics::LocalPlayerPhysics;
 use casx_core::world::ClientWorldCache;
 use casx_core::{GameVersion, ProtocolAdapter};
+use casx_net::session::v340::SessionV340;
 use casx_platform::{HighResolutionTimer, PlatformTelemetry};
+use casx_sim::{raycast_world, PlayerSimulation, VoxelHit};
 use casx_ui::{CasxUiApp, ScreenMode, UiAction};
+use casx_world::WorldStorage;
 use proto_1_12_2::Proto1_12_2;
 use proto_26_2::Proto26_2;
+use std::env;
+
+/// May trang thai van hanh cua Engine
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineStage {
+    /// Man hinh khoi dong / Sanh cho HoYoPlay Hub & Legacy Launcher
+    Launcher,
+    /// Dang tai tai nguyen va ghep TextureAtlas len GPU
+    LoadingAssets,
+    /// Dang trong the gioi 3D Voxel thuc te (Render 5 Pass + 20 TPS Physics)
+    InGame,
+}
 
 pub struct ClientApp {
+    pub stage: EngineStage,
     pub telemetry: PlatformTelemetry,
     pub timer: HighResolutionTimer,
     pub world: ClientWorldCache,
@@ -27,6 +47,15 @@ pub struct ClientApp {
     pub ui: CasxUiApp,
     pub in_game: bool,
     pub ping_ms: u32,
+
+    // Cac thanh phan nang cao Giai doan 2
+    pub atlas: TextureAtlas,
+    pub world_storage: WorldStorage,
+    pub sim: PlayerSimulation,
+    pub prev_tick_pos: DVec3,
+    pub accumulator: f64,
+    pub target_block: Option<VoxelHit>,
+    pub session_v340: Option<SessionV340>,
 }
 
 impl Default for ClientApp {
@@ -47,10 +76,16 @@ impl ClientApp {
         let active_protocol: Box<dyn ProtocolAdapter> = Box::new(Proto1_12_2::new());
         let ui = CasxUiApp::default();
 
+        let (_pixels, atlas) = generate_procedural_atlas();
+        let world_storage = WorldStorage::new();
+        let sim = PlayerSimulation::new(DVec3::new(0.0, 64.0, 0.0));
+
         println!("[INFO] [casx_client::init] Tong dung luong RAM vat ly: {} MB", telemetry.total_memory_mb());
         println!("[INFO] [casx_client::init] Phien ban khoi dong mac dinh: {:?}", active_protocol.version());
+        println!("[INFO] [casx_client::init] TextureAtlas san sang (Kich thuoc: {}x{})", atlas.width, atlas.height);
 
         Self {
+            stage: EngineStage::Launcher,
             telemetry,
             timer,
             world,
@@ -60,6 +95,13 @@ impl ClientApp {
             ui,
             in_game: false,
             ping_ms: 0,
+            atlas,
+            world_storage,
+            sim,
+            prev_tick_pos: DVec3::new(0.0, 64.0, 0.0),
+            accumulator: 0.0,
+            target_block: None,
+            session_v340: None,
         }
     }
 
@@ -76,19 +118,52 @@ impl ClientApp {
         }
     }
 
-    /// Thuc thi mot chu ky vong lap chinh (Tick vat ly + do FPS)
+    /// Tinh toan toa do Camera noi suy giua 2 tick vat ly 20 TPS
+    ///
+    /// Cong thuc:
+    /// $$\vec{P}_{\text{render}} = \vec{P}_{\text{prev}} + \left(\vec{P}_{\text{curr}} - \vec{P}_{\text{prev}}\right) \times \alpha$$
+    pub fn get_interpolated_render_pos(&self) -> DVec3 {
+        let alpha = (self.accumulator / 0.05).clamp(0.0, 1.0);
+        self.prev_tick_pos.lerp(&self.sim.pos, alpha)
+    }
+
+    /// Thuc thi mot chu ky vong lap chinh (Tick vat ly + do FPS + Accumulator 20 TPS)
     pub fn update_tick(&mut self) {
         let delta = self.timer.tick_frame();
         self.telemetry.poll_updates();
 
         if self.in_game {
-            // Chay mot tick vat ly 20 TPS
-            self.physics.step_physics_tick(
-                &self.world,
-                if self.ui.key_w { 1.0 } else if self.ui.key_s { -1.0 } else { 0.0 },
-                if self.ui.key_d { 1.0 } else if self.ui.key_a { -1.0 } else { 0.0 },
-                self.ui.key_space,
+            self.accumulator += delta;
+
+            // Bo tich luy thoi gian co dinh 20 TPS (50ms / tick)
+            while self.accumulator >= 0.05 {
+                self.prev_tick_pos = self.sim.pos;
+
+                // 1. Chay mo phong vat ly nguoi choi trong casx-sim
+                self.sim.tick(&self.world_storage);
+
+                // 2. Dong bo sang LocalPlayerPhysics cua casx-core
+                self.physics.step_physics_tick(
+                    &self.world,
+                    if self.ui.key_w { 1.0 } else if self.ui.key_s { -1.0 } else { 0.0 },
+                    if self.ui.key_d { 1.0 } else if self.ui.key_a { -1.0 } else { 0.0 },
+                    self.ui.key_space,
+                );
+
+                self.accumulator -= 0.05;
+            }
+
+            // 3. Do tia Voxel DDA tu mat camera (chieu cao mat = pos.y + 1.62m)
+            let eye_pos = DVec3::new(self.sim.pos.x, self.sim.pos.y + 1.62, self.sim.pos.z);
+            let yaw_rad = (self.sim.yaw as f64).to_radians();
+            let pitch_rad = (self.sim.pitch as f64).to_radians();
+            let look_dir = DVec3::new(
+                -yaw_rad.sin() * pitch_rad.cos(),
+                -pitch_rad.sin(),
+                yaw_rad.cos() * pitch_rad.cos(),
             );
+
+            self.target_block = raycast_world(&self.world_storage, eye_pos, look_dir, 4.5);
         }
 
         // Dong bo hoa trang thai vao ctl_server de phan hoi JSON-RPC
@@ -97,17 +172,17 @@ impl ClientApp {
             state.fps = self.timer.average_fps();
             state.ping_ms = self.ping_ms;
             state.loaded_chunks = self.world.loaded_chunk_count();
-            state.player_pos = [self.physics.curr_pos.x, self.physics.curr_pos.y, self.physics.curr_pos.z];
+            state.player_pos = [self.sim.pos.x, self.sim.pos.y, self.sim.pos.z];
         }
 
-        // Canh bao neu thoi gian khung hinh vuot qua ngan sach 1.60 ms
+        // Canh bao neu thoi gian khung hinh vuot qua ngan sach 16.66 ms (60 FPS)
         let delta_ms = delta * 1000.0;
         if delta_ms > 16.66 && self.in_game {
             log::warn!("[casx_client::loop] Khung hinh vuot qua ngan sach: {:.2} ms", delta_ms);
         }
     }
 
-    /// Xu ly hanh dong tu UI
+    /// Xu ly hanh dong tu UI (Chuyen doi sanh cho -> Vao game)
     pub fn handle_ui_action(&mut self, action: UiAction) {
         match action {
             UiAction::SwitchVersion(ver) => {
@@ -120,12 +195,16 @@ impl ClientApp {
                 );
                 self.switch_protocol_version(version);
                 self.in_game = true;
+                self.stage = EngineStage::InGame;
                 self.ui.screen_mode = ScreenMode::InGame;
+                self.session_v340 = Some(SessionV340::new(&username));
             }
             UiAction::Disconnect => {
                 println!("[INFO] [casx_client::net] Ngat ket noi, quay ve sanh cho HoYoPlay Hub");
                 self.in_game = false;
+                self.stage = EngineStage::Launcher;
                 self.ui.screen_mode = ScreenMode::Hub;
+                self.session_v340 = None;
             }
             UiAction::None => {}
         }
@@ -133,12 +212,22 @@ impl ClientApp {
 }
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let args: Vec<String> = env::args().collect();
+
+    // Neu duoc goi o che do Eco-AFK chay ngam khong dung GPU
+    if args.iter().any(|arg| arg == "--headless-afk") {
+        println!("[INFO] [casx_client::afk] Chay che do Eco-AFK tien trinh con");
+        return;
+    }
+
     let mut app = ClientApp::new();
 
     println!("[INFO] [casx_client::main] Khoi chay thanh cong Client Engine!");
     println!("[INFO] [casx_client::main] Sanh cho HoYoPlay Hub da san sang tren do phan giai goc.");
 
-    // Chay thu nghiem 5 chu ky vong lap chinh de xac thuc hoat dong
+    // Chay gia lap 5 chu ky vong lap chinh
     for _ in 0..5 {
         app.update_tick();
     }
@@ -158,6 +247,7 @@ mod tests {
         let mut app = ClientApp::new();
         assert_eq!(app.active_protocol.version(), GameVersion::V1_12_2);
         assert!(!app.in_game);
+        assert_eq!(app.stage, EngineStage::Launcher);
 
         // Kiem tra Hot-Switch sang 26.2
         app.handle_ui_action(UiAction::SwitchVersion(GameVersion::V26_2));
@@ -171,11 +261,16 @@ mod tests {
             version: GameVersion::V26_2,
         });
         assert!(app.in_game);
+        assert_eq!(app.stage, EngineStage::InGame);
         assert_eq!(app.ui.screen_mode, ScreenMode::InGame);
 
         // Chay 3 ticks vat ly trong game
         for _ in 0..3 {
             app.update_tick();
         }
+
+        // Kiem tra noi suy camera
+        let render_pos = app.get_interpolated_render_pos();
+        assert!(render_pos.y <= 64.0);
     }
 }

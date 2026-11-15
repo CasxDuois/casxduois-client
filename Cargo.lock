@@ -341,6 +341,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "casx-assets"
+version = "0.1.0"
+dependencies = [
+ "casx_core",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "casx-net"
 version = "0.1.0"
 dependencies = [
@@ -376,6 +387,10 @@ name = "casx_client"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "casx-assets",
+ "casx-net",
+ "casx-sim",
+ "casx-world",
  "casx_core",
  "casx_platform",
  "casx_render",
@@ -430,6 +445,8 @@ name = "casx_render"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "casx-assets",
+ "casx-world",
  "casx_core",
  "glam",
  "log",

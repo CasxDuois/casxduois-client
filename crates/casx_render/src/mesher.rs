@@ -252,6 +252,79 @@ impl GreedyMesher {
     pub fn mesh_sections_parallel(sections: &[ChunkSection]) -> Vec<SectionMesh> {
         sections.par_iter().map(Self::mesh_section).collect()
     }
+
+    /// Tao luoi truc tiep tu WorldStorage cua 1.12.2 va TextureAtlas
+    pub fn mesh_world_section(
+        world: &casx_world::WorldStorage,
+        chunk_x: i32,
+        chunk_z: i32,
+        sec_y: u8,
+        atlas: &casx_assets::TextureAtlas,
+    ) -> SectionMesh {
+        let base_x = chunk_x * 16;
+        let base_y = sec_y as i32 * 16;
+        let base_z = chunk_z * 16;
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for ly in 0..16i32 {
+            for lz in 0..16i32 {
+                for lx in 0..16i32 {
+                    let wx = base_x + lx;
+                    let wy = base_y + ly;
+                    let wz = base_z + lz;
+
+                    let state = world.get_block_state(wx, wy, wz);
+                    let (block_id, meta) = casx_core::palette::SectionPaletteV340::unpack_block_id_meta(state);
+                    if block_id == 0 {
+                        continue;
+                    }
+
+                    // Kiem tra 6 mat: 0=Bottom, 1=Top, 2=North, 3=South, 4=West, 5=East
+                    let neighbors = [
+                        (0u32, wx, wy - 1, wz),
+                        (1u32, wx, wy + 1, wz),
+                        (2u32, wx, wy, wz - 1),
+                        (3u32, wx, wy, wz + 1),
+                        (4u32, wx - 1, wy, wz),
+                        (5u32, wx + 1, wy, wz),
+                    ];
+
+                    for &(face_idx, nx, ny, nz) in &neighbors {
+                        let n_state = world.get_block_state(nx, ny, nz);
+                        let (n_id, _) = casx_core::palette::SectionPaletteV340::unpack_block_id_meta(n_state);
+
+                        if casx_assets::TextureAtlas::is_transparent(n_id) {
+                            let tex_id = atlas.get_block_texture_id(block_id, meta, face_idx as u8) as u32;
+                            let base_idx = vertices.len() as u32;
+                            let quad_verts = Self::generate_quad_vertices(
+                                face_idx,
+                                lx as u32,
+                                ly as u32,
+                                lz as u32,
+                                1,
+                                1,
+                                tex_id,
+                            );
+
+                            vertices.extend_from_slice(&quad_verts);
+                            indices.extend_from_slice(&[
+                                base_idx,
+                                base_idx + 1,
+                                base_idx + 2,
+                                base_idx,
+                                base_idx + 2,
+                                base_idx + 3,
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionMesh { vertices, indices }
+    }
 }
 
 #[cfg(test)]
@@ -276,5 +349,36 @@ mod tests {
         // Tong so mat: mat Top (1 quad) + mat Bottom (1 quad) + 4 mat bien (16 quads)
         assert!(mesh.quad_count() < 30, "Greedy Meshing phai giam manh so luong da giac: {}", mesh.quad_count());
         assert_eq!(mesh.indices.len(), mesh.quad_count() * 6);
+    }
+
+    #[test]
+    fn test_mesh_world_section_face_culling() {
+        use casx_world::region::{ChunkColumnV340, ChunkSectionV340};
+        use casx_core::palette::SectionPaletteV340;
+        use casx_assets::TextureAtlas;
+
+        let mut world = casx_world::WorldStorage::new();
+        let atlas = TextureAtlas::new(512, 512, 16);
+
+        // Dat 2 khoi da ke nhau tai (0, 64, 0) va (1, 64, 0)
+        let mut data = vec![0u64; 256];
+        data[0] |= 1u64; // (0, 0, 0) trong section 4
+        data[0] |= 1u64 << 4; // (1, 0, 0) trong section 4
+        let palette = vec![0, 16]; // stone
+        let section = SectionPaletteV340::from_packet_data(4, Some(palette), data).unwrap();
+        let mut col = ChunkColumnV340::new(0, 0);
+        col.sections.insert(4, ChunkSectionV340 {
+            y_index: 4,
+            palette: section,
+            block_light: vec![15; 2048],
+            sky_light: None,
+        });
+        world.chunks.insert((0, 0), col);
+
+        let mesh = GreedyMesher::mesh_world_section(&world, 0, 0, 4, &atlas);
+        // Moi khoi doc lap co 6 mat -> 2 khoi = 12 mat.
+        // Vi 2 khoi cham nhau tai mat West/East -> phai bi culled mat cham do!
+        // So mat con lai phai la 10 mat = 10 quads.
+        assert_eq!(mesh.quad_count(), 10);
     }
 }

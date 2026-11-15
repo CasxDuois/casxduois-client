@@ -6,6 +6,8 @@ description = "High-performance voxel graphics engine with 6-face greedy mesher,
 
 [dependencies]
 casx_core = { workspace = true }
+casx-assets = { path = "../casx_assets" }
+casx-world = { path = "../casx_world" }
 wgpu = { workspace = true }
 rayon = { workspace = true }
 glam = { workspace = true }

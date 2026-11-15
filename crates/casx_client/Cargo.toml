@@ -7,6 +7,10 @@ description = "Main executable entry point connecting all layers for CasxDuois C
 [dependencies]
 casx_platform = { workspace = true }
 casx_core = { workspace = true }
+casx-assets = { path = "../casx_assets" }
+casx-net = { path = "../casx_net" }
+casx-world = { path = "../casx_world" }
+casx-sim = { path = "../casx_sim" }
 proto_1_12_2 = { workspace = true }
 proto_26_2 = { workspace = true }
 casx_render = { workspace = true }

@@ -2,6 +2,7 @@
 members = [
     "crates/casx_platform",
     "crates/casx_core",
+    "crates/casx_assets",
     "crates/casx_net",
     "crates/casx_world",
     "crates/casx_sim",
@@ -17,6 +18,7 @@ resolver = "2"
 [workspace.dependencies]
 casx_platform = { path = "crates/casx_platform" }
 casx_core = { path = "crates/casx_core" }
+casx_assets = { path = "crates/casx_assets" }
 casx_net = { path = "crates/casx_net" }
 casx_world = { path = "crates/casx_world" }
 casx_sim = { path = "crates/casx_sim" }
