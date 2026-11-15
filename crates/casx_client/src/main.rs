@@ -16,6 +16,7 @@ use casx_core::jmath::DVec3;
 use casx_core::physics::LocalPlayerPhysics;
 use casx_core::world::ClientWorldCache;
 use casx_core::{GameVersion, ProtocolAdapter};
+use casx_launcher::{LaunchTarget, LauncherState};
 use casx_net::session::v340::SessionV340;
 use casx_platform::{HighResolutionTimer, PlatformTelemetry};
 use casx_sim::{raycast_world, PlayerSimulation, VoxelHit};
@@ -38,6 +39,7 @@ pub enum EngineStage {
 
 pub struct ClientApp {
     pub stage: EngineStage,
+    pub launcher: LauncherState,
     pub telemetry: PlatformTelemetry,
     pub timer: HighResolutionTimer,
     pub world: ClientWorldCache,
@@ -86,6 +88,7 @@ impl ClientApp {
 
         Self {
             stage: EngineStage::Launcher,
+            launcher: LauncherState::default(),
             telemetry,
             timer,
             world,
@@ -187,6 +190,7 @@ impl ClientApp {
         match action {
             UiAction::SwitchVersion(ver) => {
                 self.switch_protocol_version(ver);
+                self.launcher.profile_manager.switch_active_version(ver);
             }
             UiAction::ConnectServer { host, port, username, version } => {
                 println!(
@@ -206,7 +210,28 @@ impl ClientApp {
                 self.ui.screen_mode = ScreenMode::Hub;
                 self.session_v340 = None;
             }
+            UiAction::SendChatMessage(msg) => {
+                println!("[INFO] [casx_client::chat] Gui tin nhan chat: {}", msg);
+            }
+            UiAction::SelectHotbarSlot(slot) => {
+                println!("[INFO] [casx_client::hotbar] Chon o hotbar: {}", slot);
+                self.ui.selected_hotbar_slot = slot;
+            }
             UiAction::None => {}
+        }
+    }
+
+    /// Khoi chay phien game truc tiep tu cau hinh LauncherState (In-Window Morphing)
+    pub fn launch_from_launcher(&mut self) {
+        let target = self.launcher.build_launch_target();
+        match target {
+            LaunchTarget::NormalClient { host, port, username, version } => {
+                self.handle_ui_action(UiAction::ConnectServer { host, port, username, version });
+            }
+            LaunchTarget::EcoAfk { .. } => {
+                let session_id = self.launcher.spawn_afk_bot_from_current_selection();
+                println!("[INFO] [casx_client::afk] Khoi chay bot Eco-AFK chay ngam voi ID: {}", session_id);
+            }
         }
     }
 }
@@ -272,5 +297,27 @@ mod tests {
         // Kiem tra noi suy camera
         let render_pos = app.get_interpolated_render_pos();
         assert!(render_pos.y <= 64.0);
+    }
+
+    #[test]
+    fn test_launcher_in_window_morphing_and_afk_launch() {
+        let mut app = ClientApp::new();
+        assert_eq!(app.stage, EngineStage::Launcher);
+
+        // Khoi chay truc tiep tu Launcher
+        app.launch_from_launcher();
+        assert_eq!(app.stage, EngineStage::InGame);
+        assert!(app.in_game);
+        assert_eq!(app.ui.screen_mode, ScreenMode::InGame);
+
+        // Quay lai Launcher va kich hoat che do Eco-AFK
+        app.handle_ui_action(UiAction::Disconnect);
+        assert_eq!(app.stage, EngineStage::Launcher);
+        assert!(!app.in_game);
+
+        app.launcher.is_eco_afk_selected = true;
+        app.launch_from_launcher();
+        assert_eq!(app.launcher.afk_manager.active_count(), 1);
+        assert!(app.launcher.afk_manager.total_memory_consumption_mb() <= 15.0);
     }
 }

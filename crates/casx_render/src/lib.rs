@@ -11,8 +11,10 @@ pub mod frustum;
 pub mod mesher;
 pub mod shader;
 pub mod kawase;
+pub mod indirect;
 
 pub use frustum::{Frustum, Plane};
+pub use indirect::{DrawIndexedIndirectArgs, IndirectBatchManager};
 pub use mesher::{compute_ao, GreedyMesher, SectionMesh};
 pub use vertex::PackedVertex;
 

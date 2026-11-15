@@ -392,6 +392,7 @@ dependencies = [
  "casx-sim",
  "casx-world",
  "casx_core",
+ "casx_launcher",
  "casx_platform",
  "casx_render",
  "casx_ui",
@@ -428,6 +429,19 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "casx_launcher"
+version = "0.1.0"
+dependencies = [
+ "casx-assets",
+ "casx_core",
+ "casx_ui",
+ "log",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Main executable entry point connecting all layers for CasxDuois Client (Layer 4)"
 
+[[bin]]
+name = "CasxDuois"
+path = "src/main.rs"
+
 [dependencies]
 casx_platform = { workspace = true }
 casx_core = { workspace = true }
@@ -15,6 +19,7 @@ proto_1_12_2 = { workspace = true }
 proto_26_2 = { workspace = true }
 casx_render = { workspace = true }
 casx_ui = { workspace = true }
+casx_launcher = { path = "../casx_launcher" }
 winit = { workspace = true }
 wgpu = { workspace = true }
 egui = { workspace = true }

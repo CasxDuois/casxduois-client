@@ -6,7 +6,7 @@ use crate::ProtocolError;
 use bytes::BytesMut;
 
 /// Phien ban Minecraft duoc ho tro
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GameVersion {
     V1_12_2,
     V26_2,

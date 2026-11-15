@@ -1,0 +1,14 @@
+[package]
+name = "casx_launcher"
+version = "0.1.0"
+edition = "2021"
+description = "Unified Launcher (HoYoPlay Hub x Legacy Quick-Switch x Lunar Client HUD) and profile/afk manager"
+
+[dependencies]
+casx_core = { workspace = true }
+casx_ui = { workspace = true }
+casx_assets = { path = "../casx_assets", package = "casx-assets" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

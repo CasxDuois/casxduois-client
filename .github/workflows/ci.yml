@@ -1,0 +1,60 @@
+name: CasxDuois CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux GUI/Audio dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev libasound2-dev libudev-dev pkg-config
+
+      - name: Check workspace syntax and dependencies
+        run: cargo check --workspace
+
+      - name: Run full workspace test suite
+        run: cargo test --workspace --verbose
+
+      - name: Build release single binary (CasxDuois)
+        run: cargo build --release -p casx_client
+
+      - name: Upload Windows Executable Artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CasxDuois-Windows-x86_64
+          path: target/release/CasxDuois.exe
+          if-no-files-found: error
+
+      - name: Upload Linux Executable Artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CasxDuois-Linux-x86_64
+          path: target/release/CasxDuois
+          if-no-files-found: error
