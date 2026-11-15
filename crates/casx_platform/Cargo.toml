@@ -1,0 +1,10 @@
+[package]
+name = "casx_platform"
+version = "0.1.0"
+edition = "2021"
+description = "Hardware telemetry, OS path detection, and high-resolution timer for CasxDuois Client (Layer 1)"
+
+[dependencies]
+sysinfo = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }

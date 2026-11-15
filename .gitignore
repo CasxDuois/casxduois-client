@@ -1,0 +1,8 @@
+/target
+.local/
+*.bin
+*.log
+*.zip
+*.jar
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "client_name": "CasxDuois Client",
+  "targets": {
+    "v1_12_2": {
+      "version_id": "1.12.2",
+      "protocol_version": 340,
+      "pack_format": 3,
+      "client_jar_relpath": "versions/1.12.2/1.12.2.jar",
+      "client_jar_sha1": "0f275bc1547d01fa5e56ea54bd81e2d9c29f23e4",
+      "extract_namespaces": ["minecraft"],
+      "atlas_strategy": "legacy_blockstate_meta_16bit"
+    },
+    "v26_2": {
+      "version_id": "26.2",
+      "protocol_version": 770,
+      "pack_format": 97,
+      "client_jar_relpath": "versions/26.2/26.2.jar",
+      "client_jar_sha1": "9f67e10e00000000000000000000000000000000",
+      "extract_namespaces": ["minecraft"],
+      "atlas_strategy": "modern_flattened_palette_32bit"
+    }
+  }
+}
