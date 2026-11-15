@@ -1,0 +1,22 @@
+[package]
+name = "casx_core"
+version = "0.1.0"
+edition = "2021"
+description = "Core network codec, cryptography, NBT, physics, and world state for CasxDuois Client (Layer 2)"
+
+[dependencies]
+casx_platform = { workspace = true }
+bytes = { workspace = true }
+glam = { workspace = true }
+thiserror = { workspace = true }
+flate2 = { workspace = true }
+aes = { workspace = true }
+cfb8 = { workspace = true }
+md-5 = { workspace = true }
+sha1 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+hex = "0.4"
